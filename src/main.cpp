@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <array>
 #include <cstring>
+#include <cmath>
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -108,6 +109,7 @@ private:
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
     };
 
+    // --- Vulkan handles ---
     GLFWwindow*      window         = nullptr;
     VkInstance       instance       = VK_NULL_HANDLE;
     VkSurfaceKHR     surface        = VK_NULL_HANDLE;
@@ -123,10 +125,9 @@ private:
     std::vector<VkImageView>   swapChainImageViews;
 
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-
-    VkRenderPass               renderPass       = VK_NULL_HANDLE;
-    VkPipelineLayout           pipelineLayout   = VK_NULL_HANDLE;
-    VkPipeline                 graphicsPipeline = VK_NULL_HANDLE;
+    VkRenderPass          renderPass          = VK_NULL_HANDLE;
+    VkPipelineLayout      pipelineLayout      = VK_NULL_HANDLE;
+    VkPipeline            graphicsPipeline    = VK_NULL_HANDLE;
 
     VkImage        depthImage       = VK_NULL_HANDLE;
     VkDeviceMemory depthImageMemory = VK_NULL_HANDLE;
@@ -135,13 +136,13 @@ private:
     std::vector<VkFramebuffer>   swapChainFramebuffers;
     VkCommandPool                commandPool = VK_NULL_HANDLE;
 
-    VkBuffer       vertexBuffer       = VK_NULL_HANDLE;
-    VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;
-    VkBuffer       indexBuffer        = VK_NULL_HANDLE;
-    VkDeviceMemory indexBufferMemory  = VK_NULL_HANDLE;
-    VkBuffer       uniformBuffer      = VK_NULL_HANDLE;
-    VkDeviceMemory uniformBufferMemory= VK_NULL_HANDLE;
-    void*          uniformBufferMapped= nullptr;
+    VkBuffer       vertexBuffer        = VK_NULL_HANDLE;
+    VkDeviceMemory vertexBufferMemory  = VK_NULL_HANDLE;
+    VkBuffer       indexBuffer         = VK_NULL_HANDLE;
+    VkDeviceMemory indexBufferMemory   = VK_NULL_HANDLE;
+    VkBuffer       uniformBuffer       = VK_NULL_HANDLE;
+    VkDeviceMemory uniformBufferMemory = VK_NULL_HANDLE;
+    void*          uniformBufferMapped = nullptr;
 
     VkDescriptorPool             descriptorPool = VK_NULL_HANDLE;
     VkDescriptorSet              descriptorSet  = VK_NULL_HANDLE;
@@ -151,8 +152,24 @@ private:
     VkSemaphore                  renderFinishedSemaphore = VK_NULL_HANDLE;
     VkFence                      inFlightFence           = VK_NULL_HANDLE;
 
+    // --- Camera ---
+    glm::vec3 cameraPos        = glm::vec3(0.0f, 1.5f, 4.0f);
+    float     cameraYaw        = -90.0f;   // degrees; -90 = looking along -Z
+    float     cameraPitch      =  -15.0f;  // degrees; negative = looking slightly down
+    float     cameraSpeed      =   3.0f;   // world units / second
+    float     mouseSensitivity =   0.12f;
+
+    double lastMouseX  = 0.0;
+    double lastMouseY  = 0.0;
+    bool   firstMouse  = true;
+    bool   captureMouse= true;
+
+    // --- Frame timing ---
+    double lastFrameTime = 0.0;
+    float  deltaTime     = 0.0f;
+
     // -----------------------------------------------------------------------
-    // Init
+    // Window
     // -----------------------------------------------------------------------
 
     void initWindow() {
@@ -165,7 +182,81 @@ private:
         window = glfwCreateWindow(WIDTH, HEIGHT, "CrystalByte - Vulkan", nullptr, nullptr);
         if (!window)
             throw std::runtime_error("Failed to create GLFW window");
+
+        glfwSetWindowUserPointer(window, this);
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        setupCallbacks();
     }
+
+    void setupCallbacks() {
+        glfwSetCursorPosCallback(window, [](GLFWwindow* w, double x, double y) {
+            static_cast<VulkanApplication*>(glfwGetWindowUserPointer(w))->onMouseMove(x, y);
+        });
+
+        glfwSetKeyCallback(window, [](GLFWwindow* w, int key, int, int action, int) {
+            auto* app = static_cast<VulkanApplication*>(glfwGetWindowUserPointer(w));
+            if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+                app->toggleMouseCapture();
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // Camera input
+    // -----------------------------------------------------------------------
+
+    void toggleMouseCapture() {
+        captureMouse = !captureMouse;
+        glfwSetInputMode(window, GLFW_CURSOR,
+                         captureMouse ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+        if (captureMouse) firstMouse = true; // reset so cursor jump doesn't snap the view
+    }
+
+    void onMouseMove(double xpos, double ypos) {
+        if (!captureMouse) return;
+
+        if (firstMouse) {
+            lastMouseX = xpos;
+            lastMouseY = ypos;
+            firstMouse = false;
+        }
+
+        float dx = static_cast<float>(xpos - lastMouseX) * mouseSensitivity;
+        float dy = static_cast<float>(lastMouseY - ypos) * mouseSensitivity; // Y reversed
+
+        lastMouseX = xpos;
+        lastMouseY = ypos;
+
+        cameraYaw   += dx;
+        cameraPitch  = glm::clamp(cameraPitch + dy, -89.0f, 89.0f);
+    }
+
+    // Returns the normalized forward vector from yaw/pitch.
+    glm::vec3 cameraForward() const {
+        glm::vec3 front;
+        front.x = std::cos(glm::radians(cameraYaw)) * std::cos(glm::radians(cameraPitch));
+        front.y = std::sin(glm::radians(cameraPitch));
+        front.z = std::sin(glm::radians(cameraYaw)) * std::cos(glm::radians(cameraPitch));
+        return glm::normalize(front);
+    }
+
+    void processInput() {
+        if (!captureMouse) return;
+
+        glm::vec3 front = cameraForward();
+        glm::vec3 right = glm::normalize(glm::cross(front, glm::vec3(0.0f, 1.0f, 0.0f)));
+        float     speed = cameraSpeed * deltaTime;
+
+        if (glfwGetKey(window, GLFW_KEY_W)            == GLFW_PRESS) cameraPos += front   * speed;
+        if (glfwGetKey(window, GLFW_KEY_S)            == GLFW_PRESS) cameraPos -= front   * speed;
+        if (glfwGetKey(window, GLFW_KEY_A)            == GLFW_PRESS) cameraPos -= right   * speed;
+        if (glfwGetKey(window, GLFW_KEY_D)            == GLFW_PRESS) cameraPos += right   * speed;
+        if (glfwGetKey(window, GLFW_KEY_SPACE)        == GLFW_PRESS) cameraPos.y += speed;
+        if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) cameraPos.y -= speed;
+    }
+
+    // -----------------------------------------------------------------------
+    // Vulkan init
+    // -----------------------------------------------------------------------
 
     void initVulkan() {
         createInstance();
@@ -556,7 +647,6 @@ private:
         subpass.pColorAttachments       = &colorRef;
         subpass.pDepthStencilAttachment = &depthRef;
 
-        // Wait for both color writes and early depth tests before starting the subpass.
         VkSubpassDependency dependency{};
         dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
         dependency.dstSubpass    = 0;
@@ -633,7 +723,6 @@ private:
 
         VkPipelineShaderStageCreateInfo shaderStages[] = { vertStage, fragStage };
 
-        // Vertex input — now reads from a real vertex buffer.
         auto bindingDesc   = Vertex::getBindingDescription();
         auto attributeDesc = Vertex::getAttributeDescriptions();
 
@@ -672,14 +761,12 @@ private:
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth   = 1.0f;
         rasterizer.cullMode    = VK_CULL_MODE_BACK_BIT;
-        // CCW in world space (Y-up) after the projection Y-flip.
         rasterizer.frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
         VkPipelineMultisampleStateCreateInfo multisampling{};
         multisampling.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
         multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-        // Depth test: closer fragments win (less depth = closer to camera).
         VkPipelineDepthStencilStateCreateInfo depthStencil{};
         depthStencil.sType                 = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
         depthStencil.depthTestEnable       = VK_TRUE;
@@ -902,7 +989,6 @@ private:
         swapChainFramebuffers.resize(swapChainImageViews.size());
 
         for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-            // Each framebuffer has a color attachment (per-image) and a shared depth attachment.
             std::array<VkImageView, 2> attachments = { swapChainImageViews[i], depthImageView };
 
             VkFramebufferCreateInfo info{};
@@ -946,7 +1032,6 @@ private:
     void createVertexBuffer() {
         VkDeviceSize size = sizeof(vertices[0]) * vertices.size();
 
-        // Stage: CPU-visible memory for the initial upload.
         VkBuffer       stagingBuffer;
         VkDeviceMemory stagingMemory;
         createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -958,7 +1043,6 @@ private:
         std::memcpy(data, vertices.data(), static_cast<size_t>(size));
         vkUnmapMemory(device, stagingMemory);
 
-        // Final: GPU-local memory (fast for the GPU to read from).
         createBuffer(size,
                      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -1005,7 +1089,6 @@ private:
 
     void createUniformBuffer() {
         VkDeviceSize size = sizeof(UniformBufferObject);
-        // Keep host-visible and persistently mapped — updated every frame via memcpy.
         createBuffer(size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                      uniformBuffer, uniformBufferMemory);
@@ -1087,7 +1170,6 @@ private:
             if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS)
                 throw std::runtime_error("Failed to begin recording command buffer");
 
-            // Two clear values: one for color, one for depth.
             VkClearValue clearValues[2];
             std::memset(clearValues, 0, sizeof(clearValues));
             clearValues[0].color.float32[0] = 0.05f;
@@ -1109,9 +1191,9 @@ private:
             vkCmdBeginRenderPass(commandBuffers[i], &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-            VkBuffer     vertexBuffers[] = { vertexBuffer };
-            VkDeviceSize offsets[]       = { 0 };
-            vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
+            VkBuffer     vbufs[]   = { vertexBuffer };
+            VkDeviceSize offsets[] = { 0 };
+            vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vbufs, offsets);
             vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT16);
             vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
@@ -1153,17 +1235,19 @@ private:
     void updateUniformBuffer() {
         float time = static_cast<float>(glfwGetTime());
 
+        // Pyramid slides back and forth along X, spinning on Y.
+        float objectX = std::sin(time * 0.8f) * 1.5f;
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(objectX, 0.0f, 0.0f));
+        model = glm::rotate(model, time * glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
+        glm::vec3 front = cameraForward();
+
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f),
-                                time * glm::radians(45.0f),
-                                glm::vec3(0.0f, 1.0f, 0.0f));
-        ubo.view  = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
-                                glm::vec3(0.0f, 0.0f, 0.0f),
-                                glm::vec3(0.0f, 1.0f, 0.0f));
-        ubo.proj  = glm::perspective(glm::radians(45.0f),
+        ubo.model = model;
+        ubo.view  = glm::lookAt(cameraPos, cameraPos + front, glm::vec3(0.0f, 1.0f, 0.0f));
+        ubo.proj  = glm::perspective(glm::radians(60.0f),
                                      static_cast<float>(swapChainExtent.width) / swapChainExtent.height,
-                                     0.1f, 10.0f);
-        // GLM uses OpenGL clip convention (Y up); flip Y for Vulkan (Y down).
+                                     0.1f, 100.0f);
         ubo.proj[1][1] *= -1.0f;
 
         std::memcpy(uniformBufferMapped, &ubo, sizeof(ubo));
@@ -1214,10 +1298,18 @@ private:
     // -----------------------------------------------------------------------
 
     void mainLoop() {
+        lastFrameTime = glfwGetTime();
+
         while (!glfwWindowShouldClose(window)) {
+            double now = glfwGetTime();
+            deltaTime     = static_cast<float>(now - lastFrameTime);
+            lastFrameTime = now;
+
             glfwPollEvents();
+            processInput();
             drawFrame();
         }
+
         vkDeviceWaitIdle(device);
     }
 
