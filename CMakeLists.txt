@@ -32,6 +32,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 find_package(Vulkan REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
+find_package(tinyobjloader CONFIG REQUIRED)
 
 # Compile GLSL shaders to SPIR-V at build time
 set(SHADER_DIR "${CMAKE_BINARY_DIR}/shaders")
@@ -59,18 +60,26 @@ add_custom_target(Shaders ALL DEPENDS ${SPV_SHADERS})
 # Create executable
 add_executable(${PROJECT_NAME}
     src/main.cpp
+    src/Application.cpp
+    src/Camera.cpp
+    src/Mesh.cpp
 )
 
 add_dependencies(${PROJECT_NAME} Shaders)
 
-# Let the C++ code know where the compiled shaders live
+# Let the C++ code know where the compiled shaders live.
+# GLM flags apply project-wide so every .cpp sees them without per-file #defines.
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     "SHADER_DIR=\"${SHADER_DIR}\""
+    "ASSETS_DIR=\"${CMAKE_SOURCE_DIR}/assets\""
+    GLM_FORCE_RADIANS
+    GLM_FORCE_DEPTH_ZERO_TO_ONE
 )
 
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${VULKAN_INCLUDE_DIRS}
 )
 
@@ -79,6 +88,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Vulkan::Vulkan
     glfw
     glm::glm
+    tinyobjloader::tinyobjloader
 )
 
 # Enable debug symbols
