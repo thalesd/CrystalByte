@@ -16,7 +16,9 @@
       "PowerShell($env:VCPKG_ROOT = \"C:\\\\vcpkg\"; cmake -S \"C:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\" -B \"C:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\\\\build\" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=\"C:/vcpkg/scripts/buildsystems/vcpkg.cmake\" 2>&1)",
       "PowerShell(cmake --preset default \"C:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\" 2>&1)",
       "PowerShell(cmake --build \"C:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\\\\build\" --config Debug 2>&1)",
-      "PowerShell(cmake -S \"C:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\" -B \"C:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\\\\build\" -G \"Visual Studio 17 2022\" -DCMAKE_TOOLCHAIN_FILE=\"C:/vcpkg/scripts/buildsystems/vcpkg.cmake\" -DCMAKE_BUILD_TYPE=Debug 2>&1)"
+      "PowerShell(cmake -S \"C:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\" -B \"C:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\\\\build\" -G \"Visual Studio 17 2022\" -DCMAKE_TOOLCHAIN_FILE=\"C:/vcpkg/scripts/buildsystems/vcpkg.cmake\" -DCMAKE_BUILD_TYPE=Debug 2>&1)",
+      "Bash(cmake --build build --config Debug)",
+      "Bash(taskkill /F /IM CrystalByte.exe)"
     ]
   }
 }
