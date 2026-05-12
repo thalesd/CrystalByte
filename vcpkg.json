@@ -1,0 +1,10 @@
+{
+  "name": "crystalbyte",
+  "version": "0.1.0",
+  "dependencies": [
+    "glfw3",
+    "glm",
+    "vulkan-headers",
+    "vulkan-loader"
+  ]
+}

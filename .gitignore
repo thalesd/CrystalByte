@@ -1,0 +1,38 @@
+# Build directories
+build/
+out/
+bin/
+lib/
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# IDE
+.vscode/
+.idea/
+*.vcxproj
+*.vcxproj.filters
+*.sln
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Executables
+*.exe
+*.out
+*.app
+*.dll
+*.so
+*.dylib
+
+# Dependencies (if locally installed)
+/third_party/installed/
+
+# vcpkg
+vcpkg_installed/
+vcpkg_installed

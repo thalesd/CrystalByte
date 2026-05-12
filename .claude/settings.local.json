@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Program Files/CMake/**)",
+      "PowerShell(Get-ChildItem \"C:\\\\Program Files\\\\CMake\" -ErrorAction SilentlyContinue | Select-Object Name; Get-ChildItem \"C:\\\\Program Files \\(x86\\)\\\\CMake\" -ErrorAction SilentlyContinue | Select-Object Name; Get-ChildItem \"$env:USERPROFILE\\\\scoop\\\\apps\\\\cmake\" -ErrorAction SilentlyContinue | Select-Object Name; Get-ChildItem \"C:\\\\tools\\\\cmake\" -ErrorAction SilentlyContinue | Select-Object Name)",
+      "Read(//c/Program Files/**)",
+      "PowerShell(winget --version 2>&1)",
+      "PowerShell(choco --version 2>&1)",
+      "PowerShell(scoop --version 2>&1)",
+      "PowerShell(winget install Kitware.CMake --accept-package-agreements --accept-source-agreements)",
+      "PowerShell($env:PATH = [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"User\"\\); cmake --version)",
+      "Read(//c//**)",
+      "PowerShell(git clone https://github.com/microsoft/vcpkg.git C:\\\\vcpkg 2>&1)",
+      "PowerShell(& \"C:\\\\vcpkg\\\\bootstrap-vcpkg.bat\" -disableMetrics 2>&1)",
+      "PowerShell([System.Environment]::SetEnvironmentVariable\\(\"VCPKG_ROOT\", \"C:\\\\vcpkg\", \"Machine\"\\); [System.Environment]::SetEnvironmentVariable\\(\"PATH\", [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"Machine\"\\) + \";C:\\\\vcpkg\", \"Machine\"\\); Write-Output \"Done\")",
+      "PowerShell($env:VCPKG_ROOT = \"C:\\\\vcpkg\"; cmake -S \"C:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\" -B \"C:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\\\\build\" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=\"C:/vcpkg/scripts/buildsystems/vcpkg.cmake\" 2>&1)",
+      "PowerShell(cmake --preset default \"C:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\" 2>&1)",
+      "PowerShell(cmake --build \"C:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\\\\build\" --config Debug 2>&1)",
+      "PowerShell(cmake -S \"C:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\" -B \"C:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\\\\build\" -G \"Visual Studio 17 2022\" -DCMAKE_TOOLCHAIN_FILE=\"C:/vcpkg/scripts/buildsystems/vcpkg.cmake\" -DCMAKE_BUILD_TYPE=Debug 2>&1)"
+    ]
+  }
+}
