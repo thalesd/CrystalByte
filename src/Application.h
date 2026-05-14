@@ -10,6 +10,7 @@
 #include "Types.h"
 #include "Camera.h"
 #include "Mesh.h"
+#include "LaunchSettings.h"
 
 // ---------------------------------------------------------------------------
 // Internal Vulkan helper types
@@ -33,11 +34,10 @@ struct SwapChainSupportDetails {
 
 class VulkanApplication {
 public:
-    void run(const std::string& modelPath);
+    void run(const std::string& modelPath, const LaunchConfig& cfg);
 
 private:
-    static constexpr int WIDTH  = 800;
-    static constexpr int HEIGHT = 600;
+    LaunchConfig config;
 
     const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 

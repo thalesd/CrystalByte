@@ -12,12 +12,15 @@
 #include <array>
 #include <cstring>
 #include <cmath>
+#include <thread>
+#include <chrono>
 
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 
-void VulkanApplication::run(const std::string& modelPath) {
+void VulkanApplication::run(const std::string& modelPath, const LaunchConfig& cfg) {
+    config = cfg;
     mesh = Mesh::loadOBJ(modelPath);
     std::cout << "Loaded mesh: " << mesh.vertices.size() << " vertices, "
               << mesh.indices.size() << " indices\n";
@@ -38,7 +41,7 @@ void VulkanApplication::initWindow() {
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
-    window = glfwCreateWindow(WIDTH, HEIGHT, "CrystalByte", nullptr, nullptr);
+    window = glfwCreateWindow(config.width, config.height, "CrystalByte", nullptr, nullptr);
     if (!window)
         throw std::runtime_error("Failed to create GLFW window");
 
@@ -1064,16 +1067,29 @@ void VulkanApplication::drawFrame() {
 // ---------------------------------------------------------------------------
 
 void VulkanApplication::mainLoop() {
+    const double targetFrameTime =
+        (config.targetFPS > 0) ? (1.0 / config.targetFPS) : 0.0;
+
     lastFrameTime = glfwGetTime();
 
     while (!glfwWindowShouldClose(window)) {
-        double now    = glfwGetTime();
-        deltaTime     = static_cast<float>(now - lastFrameTime);
-        lastFrameTime = now;
+        double frameStart = glfwGetTime();
+        deltaTime         = static_cast<float>(frameStart - lastFrameTime);
+        lastFrameTime     = frameStart;
 
         glfwPollEvents();
         camera.processInput(window, deltaTime);
         drawFrame();
+
+        if (targetFrameTime > 0.0) {
+            double elapsed   = glfwGetTime() - frameStart;
+            double remaining = targetFrameTime - elapsed;
+            // Sleep most of the wait, then busy-spin the last 2 ms for precision
+            if (remaining > 0.002)
+                std::this_thread::sleep_for(
+                    std::chrono::duration<double>(remaining - 0.002));
+            while (glfwGetTime() - frameStart < targetFrameTime) {}
+        }
     }
 
     vkDeviceWaitIdle(device);

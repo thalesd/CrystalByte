@@ -63,6 +63,7 @@ add_executable(${PROJECT_NAME}
     src/Application.cpp
     src/Camera.cpp
     src/Mesh.cpp
+    src/LaunchSettings.cpp
 )
 
 add_dependencies(${PROJECT_NAME} Shaders)
