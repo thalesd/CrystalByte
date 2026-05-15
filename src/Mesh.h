@@ -8,4 +8,5 @@ struct Mesh {
     std::vector<uint32_t> indices;
 
     static Mesh loadOBJ(const std::string& path);
+    static Mesh makeSphere(int stacks, int sectors);
 };

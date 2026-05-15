@@ -1,6 +1,7 @@
 #include "Mesh.h"
 #include <tiny_obj_loader.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 #include <stdexcept>
 #include <unordered_map>
 #include <cmath>
@@ -88,6 +89,42 @@ Mesh Mesh::loadOBJ(const std::string& path) {
     for (auto& v : mesh.vertices)
         v.pos = (v.pos - center) * scale;
     // Normals are direction vectors — uniform scale doesn't change their direction
+
+    return mesh;
+}
+
+Mesh Mesh::makeSphere(int stacks, int sectors) {
+    Mesh mesh;
+    const float pi = glm::pi<float>();
+
+    for (int i = 0; i <= stacks; ++i) {
+        float phi = pi * static_cast<float>(i) / static_cast<float>(stacks);
+        for (int j = 0; j <= sectors; ++j) {
+            float theta = 2.0f * pi * static_cast<float>(j) / static_cast<float>(sectors);
+
+            Vertex v{};
+            v.pos.x    = std::sin(phi) * std::cos(theta);
+            v.pos.y    = std::cos(phi);
+            v.pos.z    = std::sin(phi) * std::sin(theta);
+            v.normal   = v.pos; // unit sphere: normal == position
+            v.texCoord = { static_cast<float>(j) / sectors,
+                           static_cast<float>(i) / stacks };
+            mesh.vertices.push_back(v);
+        }
+    }
+
+    for (int i = 0; i < stacks; ++i) {
+        for (int j = 0; j < sectors; ++j) {
+            uint32_t a = static_cast<uint32_t>(i * (sectors + 1) + j);
+            uint32_t b = a + static_cast<uint32_t>(sectors + 1);
+            mesh.indices.push_back(a);
+            mesh.indices.push_back(b);
+            mesh.indices.push_back(a + 1);
+            mesh.indices.push_back(b);
+            mesh.indices.push_back(b + 1);
+            mesh.indices.push_back(a + 1);
+        }
+    }
 
     return mesh;
 }

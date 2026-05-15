@@ -1,6 +1,7 @@
 #include "Application.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <stb_image.h>
+#include <random>
 
 #include <iostream>
 #include <vector>
@@ -34,9 +35,13 @@ void VulkanApplication::run(const std::string& modelPath, const LaunchConfig& cf
     else
         std::cout << "Texture: " << texturePath << "\n";
 
-    mesh = Mesh::loadOBJ(modelPath);
+    mesh         = Mesh::loadOBJ(modelPath);
+    asteroidMesh = Mesh::makeSphere(16, 32);
+    spawnAsteroids();
     std::cout << "Loaded mesh: " << mesh.vertices.size() << " vertices, "
               << mesh.indices.size() << " indices\n";
+    std::cout << "Asteroid sphere: " << asteroidMesh.vertices.size() << " vertices, "
+              << asteroidMesh.indices.size() << " indices\n";
     initWindow();
     initVulkan();
     mainLoop();
@@ -134,6 +139,7 @@ void VulkanApplication::initVulkan() {
     createDepthResources();
     createFramebuffers();
     createCommandPool();
+    createAsteroidBuffers();
     createTextureImage();
     createTextureImageView();
     createTextureSampler();
@@ -615,10 +621,17 @@ void VulkanApplication::createGraphicsPipeline() {
     blend.attachmentCount = 1;
     blend.pAttachments    = &blendAtt;
 
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushRange.offset     = 0;
+    pushRange.size       = sizeof(glm::mat4); // model matrix per draw call
+
     VkPipelineLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType          = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutInfo.setLayoutCount = 1;
-    layoutInfo.pSetLayouts    = &descriptorSetLayout;
+    layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount         = 1;
+    layoutInfo.pSetLayouts            = &descriptorSetLayout;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges    = &pushRange;
 
     if (vkCreatePipelineLayout(device, &layoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
         throw std::runtime_error("Failed to create pipeline layout");
@@ -987,6 +1000,78 @@ void VulkanApplication::createTextureSampler() {
 }
 
 // ---------------------------------------------------------------------------
+// Asteroids
+// ---------------------------------------------------------------------------
+
+void VulkanApplication::spawnAsteroids() {
+    std::mt19937 rng(42); // fixed seed — consistent layout every run
+    std::uniform_real_distribution<float> posXZ(-10.0f, 10.0f);
+    std::uniform_real_distribution<float> posY(-2.5f,   2.5f);
+    std::uniform_real_distribution<float> axis(-1.0f,   1.0f);
+    std::uniform_real_distribution<float> speed(15.0f,  60.0f);
+    std::uniform_real_distribution<float> angle(0.0f,  360.0f);
+
+    asteroids.reserve(12);
+    while (static_cast<int>(asteroids.size()) < 12) {
+        glm::vec3 pos(posXZ(rng), posY(rng), posXZ(rng));
+        if (glm::length(pos) < 2.5f) continue; // keep clear of the origin
+
+        Asteroid a;
+        a.position = pos;
+        a.rotAxis  = glm::normalize(glm::vec3(axis(rng), axis(rng), axis(rng)));
+        a.rotAngle = angle(rng);
+        a.rotSpeed = speed(rng);
+        asteroids.push_back(a);
+    }
+    std::cout << "Spawned " << asteroids.size() << " asteroids\n";
+}
+
+void VulkanApplication::updateAsteroids(float dt) {
+    for (auto& a : asteroids)
+        a.rotAngle += a.rotSpeed * dt;
+}
+
+void VulkanApplication::createAsteroidBuffers() {
+    // Vertex buffer
+    {
+        VkDeviceSize size = sizeof(Vertex) * asteroidMesh.vertices.size();
+        VkBuffer staging; VkDeviceMemory stagingMem;
+        createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     staging, stagingMem);
+        void* data;
+        vkMapMemory(device, stagingMem, 0, size, 0, &data);
+        std::memcpy(data, asteroidMesh.vertices.data(), static_cast<size_t>(size));
+        vkUnmapMemory(device, stagingMem);
+        createBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                     asteroidVertexBuffer, asteroidVertexBufferMemory);
+        copyBuffer(staging, asteroidVertexBuffer, size);
+        vkDestroyBuffer(device, staging, nullptr);
+        vkFreeMemory(device, stagingMem, nullptr);
+    }
+    // Index buffer
+    {
+        VkDeviceSize size = sizeof(uint32_t) * asteroidMesh.indices.size();
+        VkBuffer staging; VkDeviceMemory stagingMem;
+        createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     staging, stagingMem);
+        void* data;
+        vkMapMemory(device, stagingMem, 0, size, 0, &data);
+        std::memcpy(data, asteroidMesh.indices.data(), static_cast<size_t>(size));
+        vkUnmapMemory(device, stagingMem);
+        createBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                     asteroidIndexBuffer, asteroidIndexBufferMemory);
+        copyBuffer(staging, asteroidIndexBuffer, size);
+        vkDestroyBuffer(device, staging, nullptr);
+        vkFreeMemory(device, stagingMem, nullptr);
+    }
+    std::cout << "Asteroid GPU buffers created\n";
+}
+
+// ---------------------------------------------------------------------------
 // Geometry buffers
 // ---------------------------------------------------------------------------
 
@@ -1124,47 +1209,63 @@ void VulkanApplication::createCommandBuffers() {
     if (vkAllocateCommandBuffers(device, &alloc, commandBuffers.data()) != VK_SUCCESS)
         throw std::runtime_error("Failed to allocate command buffers");
 
-    for (size_t i = 0; i < commandBuffers.size(); i++) {
-        VkCommandBufferBeginInfo begin{};
-        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    std::cout << "Command buffers allocated: " << commandBuffers.size() << "\n";
+}
 
-        if (vkBeginCommandBuffer(commandBuffers[i], &begin) != VK_SUCCESS)
-            throw std::runtime_error("Failed to begin recording command buffer");
+void VulkanApplication::recordCommandBuffer(uint32_t imageIndex) {
+    VkCommandBuffer cb = commandBuffers[imageIndex];
 
-        VkClearValue clears[2];
-        std::memset(clears, 0, sizeof(clears));
-        clears[0].color.float32[0] = 0.05f;
-        clears[0].color.float32[1] = 0.05f;
-        clears[0].color.float32[2] = 0.1f;
-        clears[0].color.float32[3] = 1.0f;
-        clears[1].depthStencil.depth   = 1.0f;
-        clears[1].depthStencil.stencil = 0;
+    VkCommandBufferBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    if (vkBeginCommandBuffer(cb, &begin) != VK_SUCCESS)
+        throw std::runtime_error("Failed to begin recording command buffer");
 
-        VkRenderPassBeginInfo rp{};
-        rp.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        rp.renderPass        = renderPass;
-        rp.framebuffer       = swapChainFramebuffers[i];
-        rp.renderArea.extent = swapChainExtent;
-        rp.clearValueCount   = 2;
-        rp.pClearValues      = clears;
+    VkClearValue clears[2];
+    std::memset(clears, 0, sizeof(clears));
+    clears[0].color.float32[0] = 0.05f;
+    clears[0].color.float32[1] = 0.05f;
+    clears[0].color.float32[2] = 0.10f;
+    clears[0].color.float32[3] = 1.0f;
+    clears[1].depthStencil.depth   = 1.0f;
+    clears[1].depthStencil.stencil = 0;
 
-        vkCmdBeginRenderPass(commandBuffers[i], &rp, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+    VkRenderPassBeginInfo rp{};
+    rp.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    rp.renderPass        = renderPass;
+    rp.framebuffer       = swapChainFramebuffers[imageIndex];
+    rp.renderArea.extent = swapChainExtent;
+    rp.clearValueCount   = 2;
+    rp.pClearValues      = clears;
 
-        VkBuffer     vbufs[]   = { vertexBuffer };
-        VkDeviceSize offsets[] = { 0 };
-        vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vbufs, offsets);
-        vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+    vkCmdBeginRenderPass(cb, &rp, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
-        vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
-        vkCmdEndRenderPass(commandBuffers[i]);
+    const VkDeviceSize zero = 0;
 
-        if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS)
-            throw std::runtime_error("Failed to record command buffer");
+    // --- Ship ---
+    glm::mat4 shipModel = glm::rotate(glm::mat4(1.0f), glm::radians(objectRotY), glm::vec3(0, 1, 0));
+    shipModel = glm::rotate(shipModel, glm::radians(objectRotX), glm::vec3(1, 0, 0));
+    vkCmdPushConstants(cb, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
+                       0, sizeof(glm::mat4), &shipModel);
+    vkCmdBindVertexBuffers(cb, 0, 1, &vertexBuffer, &zero);
+    vkCmdBindIndexBuffer(cb, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cb, static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
+
+    // --- Asteroids ---
+    vkCmdBindVertexBuffers(cb, 0, 1, &asteroidVertexBuffer, &zero);
+    vkCmdBindIndexBuffer(cb, asteroidIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
+    for (const auto& asteroid : asteroids) {
+        glm::mat4 m = asteroid.modelMatrix();
+        vkCmdPushConstants(cb, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
+                           0, sizeof(glm::mat4), &m);
+        vkCmdDrawIndexed(cb, static_cast<uint32_t>(asteroidMesh.indices.size()), 1, 0, 0, 0);
     }
-    std::cout << "Command buffers recorded: " << commandBuffers.size() << "\n";
+
+    vkCmdEndRenderPass(cb);
+    if (vkEndCommandBuffer(cb) != VK_SUCCESS)
+        throw std::runtime_error("Failed to record command buffer");
 }
 
 // ---------------------------------------------------------------------------
@@ -1191,17 +1292,13 @@ void VulkanApplication::createSyncObjects() {
 // ---------------------------------------------------------------------------
 
 void VulkanApplication::updateUniformBuffer() {
-    glm::mat4 model = glm::rotate(glm::mat4(1.0f), glm::radians(objectRotY), glm::vec3(0.0f, 1.0f, 0.0f));
-    model           = glm::rotate(model,            glm::radians(objectRotX), glm::vec3(1.0f, 0.0f, 0.0f));
-
     glm::vec3 fwd = camera.forward();
 
     UniformBufferObject ubo{};
-    ubo.model = model;
-    ubo.view  = glm::lookAt(camera.position, camera.position + fwd, glm::vec3(0.0f, 1.0f, 0.0f));
-    ubo.proj  = glm::perspective(glm::radians(60.0f),
-                                 static_cast<float>(swapChainExtent.width) / swapChainExtent.height,
-                                 0.1f, 100.0f);
+    ubo.view = glm::lookAt(camera.position, camera.position + fwd, glm::vec3(0.0f, 1.0f, 0.0f));
+    ubo.proj = glm::perspective(glm::radians(60.0f),
+                                static_cast<float>(swapChainExtent.width) / swapChainExtent.height,
+                                0.1f, 100.0f);
     ubo.proj[1][1] *= -1.0f;
 
     std::memcpy(uniformBufferMapped, &ubo, sizeof(ubo));
@@ -1220,6 +1317,9 @@ void VulkanApplication::drawFrame() {
                           imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
 
     updateUniformBuffer();
+
+    vkResetCommandBuffer(commandBuffers[imageIndex], 0);
+    recordCommandBuffer(imageIndex);
 
     VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
@@ -1264,6 +1364,7 @@ void VulkanApplication::mainLoop() {
 
         glfwPollEvents();
         camera.processInput(window, deltaTime);
+        updateAsteroids(deltaTime);
         drawFrame();
 
         if (targetFrameTime > 0.0) {
@@ -1303,6 +1404,10 @@ void VulkanApplication::cleanup() {
     vkDestroyImageView(device, textureImageView, nullptr);
     vkDestroyImage(device, textureImage, nullptr);
     vkFreeMemory(device, textureImageMemory, nullptr);
+    vkDestroyBuffer(device, asteroidIndexBuffer, nullptr);
+    vkFreeMemory(device, asteroidIndexBufferMemory, nullptr);
+    vkDestroyBuffer(device, asteroidVertexBuffer, nullptr);
+    vkFreeMemory(device, asteroidVertexBufferMemory, nullptr);
     vkDestroyBuffer(device, indexBuffer, nullptr);
     vkFreeMemory(device, indexBufferMemory, nullptr);
     vkDestroyBuffer(device, vertexBuffer, nullptr);

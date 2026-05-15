@@ -10,6 +10,7 @@
 #include "Types.h"
 #include "Camera.h"
 #include "Mesh.h"
+#include "Asteroid.h"
 #include "LaunchSettings.h"
 
 // ---------------------------------------------------------------------------
@@ -93,8 +94,16 @@ private:
     VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE;
     VkFence     inFlightFence           = VK_NULL_HANDLE;
 
-    // --- Mesh ---
+    // --- Ship mesh ---
     Mesh mesh;
+
+    // --- Asteroids ---
+    Mesh                     asteroidMesh;
+    std::vector<Asteroid>    asteroids;
+    VkBuffer                 asteroidVertexBuffer       = VK_NULL_HANDLE;
+    VkDeviceMemory           asteroidVertexBufferMemory = VK_NULL_HANDLE;
+    VkBuffer                 asteroidIndexBuffer        = VK_NULL_HANDLE;
+    VkDeviceMemory           asteroidIndexBufferMemory  = VK_NULL_HANDLE;
 
     // --- Texture ---
     std::string    texturePath;
@@ -155,8 +164,12 @@ private:
     void createUniformBuffer();
     void createDescriptorPool();
     void createDescriptorSet();
+    void createAsteroidBuffers();
     void createCommandBuffers();
     void createSyncObjects();
+    void spawnAsteroids();
+    void updateAsteroids(float dt);
+    void recordCommandBuffer(uint32_t imageIndex);
 
     // Vulkan helpers
     QueueFamilyIndices      findQueueFamilies(VkPhysicalDevice dev) const;
