@@ -27,5 +27,5 @@ void Camera::processInput(GLFWwindow* window, float deltaTime) {
 
 void Camera::applyMouseDelta(float dx, float dy) {
     yaw   += dx * sensitivity;
-    pitch  = std::clamp(pitch + dy * sensitivity, -89.0f, 89.0f);
+    pitch  = std::clamp(pitch - dy * sensitivity, -89.0f, 89.0f);
 }

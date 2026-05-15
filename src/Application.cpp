@@ -62,7 +62,7 @@ void VulkanApplication::initWindow() {
         throw std::runtime_error("Failed to create GLFW window");
 
     glfwSetWindowUserPointer(window, this);
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     setupCallbacks();
 }
 
@@ -82,11 +82,9 @@ void VulkanApplication::setupCallbacks() {
 }
 
 void VulkanApplication::onMouseMove(double xpos, double ypos) {
-    if (!lmbHeld && !rmbHeld) return;
-
     if (firstMouseSample) {
-        prevMouseX      = xpos;
-        prevMouseY      = ypos;
+        prevMouseX       = xpos;
+        prevMouseY       = ypos;
         firstMouseSample = false;
         return;
     }
@@ -96,27 +94,14 @@ void VulkanApplication::onMouseMove(double xpos, double ypos) {
     prevMouseX = xpos;
     prevMouseY = ypos;
 
-    if (lmbHeld) {
-        objectRotY += dx * 0.4f;
-        objectRotX += dy * 0.4f;
-    }
-    if (rmbHeld) {
-        camera.applyMouseDelta(dx, dy);
-    }
+    camera.applyMouseDelta(dx, dy);
 }
 
 void VulkanApplication::onMouseButton(int button, int action, int mods) {
-    (void)mods;
-    bool pressed = (action == GLFW_PRESS);
-
-    if (button == GLFW_MOUSE_BUTTON_LEFT)  lmbHeld = pressed;
-    if (button == GLFW_MOUSE_BUTTON_RIGHT) rmbHeld = pressed;
-
-    if (pressed) {
+    (void)button; (void)mods;
+    if (action == GLFW_PRESS) {
         firstMouseSample = true;
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-    } else if (!lmbHeld && !rmbHeld) {
-        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     }
 }
 
@@ -1029,6 +1014,22 @@ void VulkanApplication::updateAsteroids(float dt) {
         a.rotAngle += a.rotSpeed * dt;
 }
 
+void VulkanApplication::processPlayerInput(float dt) {
+    glm::vec3 fwd   = camera.forward();
+    glm::vec3 right = glm::cross(fwd, glm::vec3(0.0f, 1.0f, 0.0f));
+    float     rlen  = glm::length(right);
+    if (rlen > 0.001f) right /= rlen;
+    else right = glm::vec3(1.0f, 0.0f, 0.0f);
+
+    float speed = camera.moveSpeed;
+    if (glfwGetKey(window, GLFW_KEY_W)            == GLFW_PRESS) playerPosition += fwd   * speed * dt;
+    if (glfwGetKey(window, GLFW_KEY_S)            == GLFW_PRESS) playerPosition -= fwd   * speed * dt;
+    if (glfwGetKey(window, GLFW_KEY_A)            == GLFW_PRESS) playerPosition -= right * speed * dt;
+    if (glfwGetKey(window, GLFW_KEY_D)            == GLFW_PRESS) playerPosition += right * speed * dt;
+    if (glfwGetKey(window, GLFW_KEY_SPACE)        == GLFW_PRESS) playerPosition.y += speed * dt;
+    if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) playerPosition.y -= speed * dt;
+}
+
 void VulkanApplication::createAsteroidBuffers() {
     // Vertex buffer
     {
@@ -1246,9 +1247,20 @@ void VulkanApplication::recordCommandBuffer(uint32_t imageIndex) {
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
     // --- Player (cone, blue) ---
+    // Build a rotation matrix that maps local +Y (cone apex) to camera forward.
     PushConstants playerPC{};
-    playerPC.model     = glm::rotate(glm::mat4(1.0f), glm::radians(objectRotY), glm::vec3(0, 1, 0));
-    playerPC.model     = glm::rotate(playerPC.model,  glm::radians(objectRotX), glm::vec3(1, 0, 0));
+    {
+        glm::vec3 fwd    = camera.forward();
+        glm::vec3 up_ref = (std::abs(glm::dot(fwd, glm::vec3(0.0f, 1.0f, 0.0f))) < 0.99f)
+                           ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
+        glm::vec3 col0   = glm::normalize(glm::cross(fwd, up_ref)); // local X → world right
+        glm::vec3 col2   = glm::cross(col0, fwd);                   // local Z → world up
+        glm::mat4 rot(1.0f);
+        rot[0] = glm::vec4(col0, 0.0f);
+        rot[1] = glm::vec4(fwd,  0.0f); // local Y → camera forward
+        rot[2] = glm::vec4(col2, 0.0f);
+        playerPC.model = glm::translate(glm::mat4(1.0f), playerPosition) * rot;
+    }
     playerPC.baseColor = glm::vec4(0.20f, 0.45f, 1.00f, 1.0f);
     vkCmdPushConstants(cb, pipelineLayout, kPushStages, 0, sizeof(PushConstants), &playerPC);
     vkCmdBindVertexBuffers(cb, 0, 1, &vertexBuffer, &zero);
@@ -1295,10 +1307,11 @@ void VulkanApplication::createSyncObjects() {
 // ---------------------------------------------------------------------------
 
 void VulkanApplication::updateUniformBuffer() {
-    glm::vec3 fwd = camera.forward();
+    glm::vec3 fwd    = camera.forward();
+    glm::vec3 camPos = playerPosition - fwd * 5.0f + glm::vec3(0.0f, 1.5f, 0.0f);
 
     UniformBufferObject ubo{};
-    ubo.view = glm::lookAt(camera.position, camera.position + fwd, glm::vec3(0.0f, 1.0f, 0.0f));
+    ubo.view = glm::lookAt(camPos, camPos + fwd, glm::vec3(0.0f, 1.0f, 0.0f));
     ubo.proj = glm::perspective(glm::radians(60.0f),
                                 static_cast<float>(swapChainExtent.width) / swapChainExtent.height,
                                 0.1f, 100.0f);
@@ -1366,7 +1379,7 @@ void VulkanApplication::mainLoop() {
         lastFrameTime     = frameStart;
 
         glfwPollEvents();
-        camera.processInput(window, deltaTime);
+        processPlayerInput(deltaTime);
         updateAsteroids(deltaTime);
         drawFrame();
 

@@ -112,21 +112,18 @@ private:
     VkImageView    textureImageView   = VK_NULL_HANDLE;
     VkSampler      textureSampler     = VK_NULL_HANDLE;
 
-    // --- Object rotation ---
-    float objectRotX = 0.0f;
-    float objectRotY = 0.0f;
+    // --- Player ---
+    glm::vec3 playerPosition = glm::vec3(0.0f, 0.0f, 0.0f);
 
     // --- Camera + timing ---
     Camera camera;
     double lastFrameTime = 0.0;
     float  deltaTime     = 0.0f;
 
-    // --- Mouse drag state ---
-    bool   lmbHeld         = false;
-    bool   rmbHeld         = false;
+    // --- Mouse state ---
     bool   firstMouseSample = true;
-    double prevMouseX      = 0.0;
-    double prevMouseY      = 0.0;
+    double prevMouseX       = 0.0;
+    double prevMouseY       = 0.0;
 
     // -----------------------------------------------------------------------
     // Methods
@@ -137,6 +134,7 @@ private:
     void setupCallbacks();
     void onMouseMove(double xpos, double ypos);
     void onMouseButton(int button, int action, int mods);
+    void processPlayerInput(float dt);
 
     // Vulkan init
     void initVulkan();
