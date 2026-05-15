@@ -98,10 +98,12 @@ void VulkanApplication::onMouseMove(double xpos, double ypos) {
 }
 
 void VulkanApplication::onMouseButton(int button, int action, int mods) {
-    (void)button; (void)mods;
+    (void)mods;
     if (action == GLFW_PRESS) {
         firstMouseSample = true;
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        if (button == GLFW_MOUSE_BUTTON_LEFT)
+            pendingShoot = true;
     }
 }
 
@@ -119,6 +121,7 @@ void VulkanApplication::initVulkan() {
     createDescriptorSetLayout();
     createRenderPass();
     createGraphicsPipeline();
+    createCrosshairPipeline();
     createDepthResources();
     createFramebuffers();
     createCommandPool();
@@ -641,6 +644,103 @@ void VulkanApplication::createGraphicsPipeline() {
     std::cout << "Graphics pipeline created\n";
 }
 
+void VulkanApplication::createCrosshairPipeline() {
+    auto vertCode = readFile(std::string(SHADER_DIR) + "/crosshair.vert.spv");
+    auto fragCode = readFile(std::string(SHADER_DIR) + "/crosshair.frag.spv");
+    VkShaderModule vertMod = createShaderModule(vertCode);
+    VkShaderModule fragMod = createShaderModule(fragCode);
+
+    VkPipelineShaderStageCreateInfo stages[2] = {};
+    stages[0].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage  = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = vertMod;
+    stages[0].pName  = "main";
+    stages[1].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = fragMod;
+    stages[1].pName  = "main";
+
+    VkPipelineVertexInputStateCreateInfo vertInput{};
+    vertInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    VkPipelineInputAssemblyStateCreateInfo assembly{};
+    assembly.sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkViewport viewport{};
+    viewport.width    = static_cast<float>(swapChainExtent.width);
+    viewport.height   = static_cast<float>(swapChainExtent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor{};
+    scissor.extent = swapChainExtent;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports    = &viewport;
+    viewportState.scissorCount  = 1;
+    viewportState.pScissors     = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo raster{};
+    raster.sType       = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    raster.lineWidth   = 1.0f;
+    raster.cullMode    = VK_CULL_MODE_NONE;
+
+    VkPipelineMultisampleStateCreateInfo ms{};
+    ms.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo ds{};
+    ds.sType           = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    ds.depthTestEnable = VK_FALSE;
+
+    VkPipelineColorBlendAttachmentState blendAtt{};
+    blendAtt.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+    VkPipelineColorBlendStateCreateInfo blend{};
+    blend.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    blend.attachmentCount = 1;
+    blend.pAttachments    = &blendAtt;
+
+    VkPushConstantRange pcRange{};
+    pcRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pcRange.offset     = 0;
+    pcRange.size       = sizeof(float); // aspect ratio
+
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges    = &pcRange;
+
+    if (vkCreatePipelineLayout(device, &layoutInfo, nullptr, &crosshairPipelineLayout) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create crosshair pipeline layout");
+
+    VkGraphicsPipelineCreateInfo pipeInfo{};
+    pipeInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipeInfo.stageCount          = 2;
+    pipeInfo.pStages             = stages;
+    pipeInfo.pVertexInputState   = &vertInput;
+    pipeInfo.pInputAssemblyState = &assembly;
+    pipeInfo.pViewportState      = &viewportState;
+    pipeInfo.pRasterizationState = &raster;
+    pipeInfo.pMultisampleState   = &ms;
+    pipeInfo.pDepthStencilState  = &ds;
+    pipeInfo.pColorBlendState    = &blend;
+    pipeInfo.layout              = crosshairPipelineLayout;
+    pipeInfo.renderPass          = renderPass;
+
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeInfo, nullptr, &crosshairPipeline) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create crosshair pipeline");
+
+    vkDestroyShaderModule(device, fragMod, nullptr);
+    vkDestroyShaderModule(device, vertMod, nullptr);
+    std::cout << "Crosshair pipeline created\n";
+}
+
 // ---------------------------------------------------------------------------
 // Memory / buffer helpers
 // ---------------------------------------------------------------------------
@@ -1052,6 +1152,33 @@ void VulkanApplication::checkCollisions() {
             }
         }
     }
+
+    // Bullets vs asteroids
+    static const glm::vec3 kBulletHalf(0.12f);
+    for (auto& bullet : bullets) {
+        if (!bullet.alive) continue;
+        AABB ba{ bullet.position - kBulletHalf, bullet.position + kBulletHalf };
+        for (auto& asteroid : asteroids) {
+            if (!asteroid.alive) continue;
+            AABB aa = transformAABB(kLocalMin, kLocalMax, asteroid.modelMatrix());
+            if (ba.intersects(aa)) {
+                bullet.alive   = false;
+                asteroid.alive = false;
+                break;
+            }
+        }
+    }
+}
+
+void VulkanApplication::updateBullets(float dt) {
+    for (auto& b : bullets) {
+        if (!b.alive) continue;
+        b.position += b.direction * b.speed * dt;
+        b.lifetime -= dt;
+        if (b.lifetime <= 0.0f) b.alive = false;
+    }
+    bullets.erase(std::remove_if(bullets.begin(), bullets.end(),
+        [](const Bullet& b) { return !b.alive; }), bullets.end());
 }
 
 void VulkanApplication::processPlayerInput(float dt) {
@@ -1307,6 +1434,25 @@ void VulkanApplication::recordCommandBuffer(uint32_t imageIndex) {
         vkCmdDrawIndexed(cb, static_cast<uint32_t>(asteroidMesh.indices.size()), 1, 0, 0, 0);
     }
 
+    // --- Bullets (yellow spheres, reuse asteroid mesh) ---
+    PushConstants bulletPC{};
+    bulletPC.baseColor = glm::vec4(1.0f, 0.95f, 0.1f, 1.0f);
+    for (const auto& bullet : bullets) {
+        if (!bullet.alive) continue;
+        bulletPC.model = glm::scale(glm::translate(glm::mat4(1.0f), bullet.position),
+                                    glm::vec3(0.12f));
+        vkCmdPushConstants(cb, pipelineLayout, kPushStages, 0, sizeof(PushConstants), &bulletPC);
+        vkCmdDrawIndexed(cb, static_cast<uint32_t>(asteroidMesh.indices.size()), 1, 0, 0, 0);
+    }
+
+    // --- Crosshair (2D overlay, depth-test disabled) ---
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, crosshairPipeline);
+    float aspect = static_cast<float>(swapChainExtent.width) /
+                   static_cast<float>(swapChainExtent.height);
+    vkCmdPushConstants(cb, crosshairPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
+                       0, sizeof(float), &aspect);
+    vkCmdDraw(cb, 12, 1, 0, 0);
+
     vkCmdEndRenderPass(cb);
     if (vkEndCommandBuffer(cb) != VK_SUCCESS)
         throw std::runtime_error("Failed to record command buffer");
@@ -1336,8 +1482,9 @@ void VulkanApplication::createSyncObjects() {
 // ---------------------------------------------------------------------------
 
 void VulkanApplication::updateUniformBuffer() {
-    glm::vec3 fwd    = camera.forward();
-    glm::vec3 camPos = playerPosition - fwd * 8.0f + glm::vec3(0.0f, 2.5f, 0.0f);
+    glm::vec3 fwd   = camera.forward();
+    glm::vec3 right = glm::normalize(glm::cross(fwd, glm::vec3(0.0f, 1.0f, 0.0f)));
+    glm::vec3 camPos = playerPosition - fwd * 7.0f + right * 1.2f + glm::vec3(0.0f, 2.5f, 0.0f);
 
     UniformBufferObject ubo{};
     ubo.view = glm::lookAt(camPos, camPos + fwd, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -1409,6 +1556,14 @@ void VulkanApplication::mainLoop() {
 
         glfwPollEvents();
         processPlayerInput(deltaTime);
+        if (pendingShoot) {
+            Bullet b;
+            b.position  = playerPosition + camera.forward() * 1.5f;
+            b.direction = camera.forward();
+            bullets.push_back(b);
+            pendingShoot = false;
+        }
+        updateBullets(deltaTime);
         updateAsteroids(deltaTime);
         checkCollisions();
         drawFrame();
@@ -1437,6 +1592,8 @@ void VulkanApplication::cleanup() {
     vkDestroyFence(device, inFlightFence, nullptr);
     vkDestroyCommandPool(device, commandPool, nullptr);
     for (auto fb : swapChainFramebuffers) vkDestroyFramebuffer(device, fb, nullptr);
+    vkDestroyPipeline(device, crosshairPipeline, nullptr);
+    vkDestroyPipelineLayout(device, crosshairPipelineLayout, nullptr);
     vkDestroyPipeline(device, graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
     vkDestroyRenderPass(device, renderPass, nullptr);

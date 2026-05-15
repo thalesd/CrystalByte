@@ -11,6 +11,7 @@
 #include "Camera.h"
 #include "Mesh.h"
 #include "Asteroid.h"
+#include "Bullet.h"
 #include "LaunchSettings.h"
 
 // ---------------------------------------------------------------------------
@@ -61,10 +62,12 @@ private:
     std::vector<VkImageView> swapChainImageViews;
 
     // --- Pipeline ---
-    VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-    VkRenderPass          renderPass          = VK_NULL_HANDLE;
-    VkPipelineLayout      pipelineLayout      = VK_NULL_HANDLE;
-    VkPipeline            graphicsPipeline    = VK_NULL_HANDLE;
+    VkDescriptorSetLayout descriptorSetLayout     = VK_NULL_HANDLE;
+    VkRenderPass          renderPass              = VK_NULL_HANDLE;
+    VkPipelineLayout      pipelineLayout          = VK_NULL_HANDLE;
+    VkPipeline            graphicsPipeline        = VK_NULL_HANDLE;
+    VkPipelineLayout      crosshairPipelineLayout = VK_NULL_HANDLE;
+    VkPipeline            crosshairPipeline       = VK_NULL_HANDLE;
 
     // --- Depth buffer ---
     VkImage        depthImage       = VK_NULL_HANDLE;
@@ -113,7 +116,9 @@ private:
     VkSampler      textureSampler     = VK_NULL_HANDLE;
 
     // --- Player ---
-    glm::vec3 playerPosition = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3           playerPosition = glm::vec3(0.0f, 0.0f, 0.0f);
+    std::vector<Bullet> bullets;
+    bool                pendingShoot   = false;
 
     // --- Camera + timing ---
     Camera camera;
@@ -139,6 +144,7 @@ private:
     // Gameplay
     glm::mat4 playerModelMatrix() const;
     void      checkCollisions();
+    void      updateBullets(float dt);
 
     // Vulkan init
     void initVulkan();
@@ -171,6 +177,7 @@ private:
     void createSyncObjects();
     void spawnAsteroids();
     void updateAsteroids(float dt);
+    void createCrosshairPipeline();
     void recordCommandBuffer(uint32_t imageIndex);
 
     // Vulkan helpers
