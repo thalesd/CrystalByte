@@ -116,7 +116,9 @@ private:
     VkSampler      textureSampler     = VK_NULL_HANDLE;
 
     // --- Player ---
-    glm::vec3           playerPosition = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3           playerPosition  = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3           aimDirection    = glm::vec3(0.0f, 0.0f, -1.0f);
+    glm::vec3           cameraPosition  = glm::vec3(0.0f, 0.0f, 5.0f);
     std::vector<Bullet> bullets;
     bool                pendingShoot   = false;
 
@@ -143,6 +145,7 @@ private:
 
     // Gameplay
     glm::mat4 playerModelMatrix() const;
+    glm::vec3 findCrosshairTarget() const;
     void      checkCollisions();
     void      updateBullets(float dt);
 

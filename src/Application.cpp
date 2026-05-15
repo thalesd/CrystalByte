@@ -1115,7 +1115,7 @@ void VulkanApplication::updateAsteroids(float dt) {
 }
 
 glm::mat4 VulkanApplication::playerModelMatrix() const {
-    glm::vec3 fwd    = camera.forward();
+    glm::vec3 fwd    = aimDirection;
     glm::vec3 up_ref = (std::abs(glm::dot(fwd, glm::vec3(0.0f, 1.0f, 0.0f))) < 0.99f)
                        ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
     glm::vec3 col0   = glm::normalize(glm::cross(fwd, up_ref));
@@ -1124,7 +1124,32 @@ glm::mat4 VulkanApplication::playerModelMatrix() const {
     rot[0] = glm::vec4(col0, 0.0f);
     rot[1] = glm::vec4(fwd,  0.0f);
     rot[2] = glm::vec4(col2, 0.0f);
-    return glm::translate(glm::mat4(1.0f), playerPosition) * rot;
+    // Slim the body and elongate the axis so the tip extends clearly forward
+    // and the silhouette reads as a rocket/missile from the TPS camera angle.
+    glm::mat4 shape = glm::scale(glm::mat4(1.0f), glm::vec3(0.5f, 2.0f, 0.5f));
+    return glm::translate(glm::mat4(1.0f), playerPosition) * rot * shape;
+}
+
+// Step 1 of two-step aim: cast the camera center ray against every live asteroid
+// (each is a sphere of radius 0.5 centered at asteroid.position after the 0.5 scale).
+// Returns the nearest hit point, or a far default if nothing is hit.
+glm::vec3 VulkanApplication::findCrosshairTarget() const {
+    constexpr float kFar    = 500.0f;
+    constexpr float kRadius = 0.5f;
+    float nearestT = kFar;
+
+    for (const auto& a : asteroids) {
+        if (!a.alive) continue;
+        glm::vec3 oc   = cameraPosition - a.position;
+        float     proj = glm::dot(oc, aimDirection);
+        float     disc = proj * proj - (glm::dot(oc, oc) - kRadius * kRadius);
+        if (disc < 0.0f) continue;
+        float t = -proj - std::sqrt(disc);
+        if (t > 0.0f && t < nearestT)
+            nearestT = t;
+    }
+
+    return cameraPosition + aimDirection * nearestT;
 }
 
 void VulkanApplication::checkCollisions() {
@@ -1182,7 +1207,7 @@ void VulkanApplication::updateBullets(float dt) {
 }
 
 void VulkanApplication::processPlayerInput(float dt) {
-    glm::vec3 fwd   = camera.forward();
+    glm::vec3 fwd   = aimDirection;
     glm::vec3 right = glm::cross(fwd, glm::vec3(0.0f, 1.0f, 0.0f));
     float     rlen  = glm::length(right);
     if (rlen > 0.001f) right /= rlen;
@@ -1482,12 +1507,12 @@ void VulkanApplication::createSyncObjects() {
 // ---------------------------------------------------------------------------
 
 void VulkanApplication::updateUniformBuffer() {
-    glm::vec3 fwd   = camera.forward();
-    glm::vec3 right = glm::normalize(glm::cross(fwd, glm::vec3(0.0f, 1.0f, 0.0f)));
-    glm::vec3 camPos = playerPosition - fwd * 7.0f + right * 1.2f + glm::vec3(0.0f, 2.5f, 0.0f);
+    glm::vec3 fwd        = camera.forward();
+    glm::vec3 lookTarget = playerPosition + fwd * 18.0f;
+    // cameraPosition and aimDirection are already current (set in mainLoop before drawFrame).
 
     UniformBufferObject ubo{};
-    ubo.view = glm::lookAt(camPos, camPos + fwd, glm::vec3(0.0f, 1.0f, 0.0f));
+    ubo.view = glm::lookAt(cameraPosition, lookTarget, glm::vec3(0.0f, 1.0f, 0.0f));
     ubo.proj = glm::perspective(glm::radians(60.0f),
                                 static_cast<float>(swapChainExtent.width) / swapChainExtent.height,
                                 0.1f, 100.0f);
@@ -1555,11 +1580,22 @@ void VulkanApplication::mainLoop() {
         lastFrameTime     = frameStart;
 
         glfwPollEvents();
+
+        // Recompute camera state before any game logic so all systems use the same frame's value.
+        {
+            glm::vec3 fwd   = camera.forward();
+            glm::vec3 right = glm::normalize(glm::cross(fwd, glm::vec3(0.0f, 1.0f, 0.0f)));
+            cameraPosition = playerPosition - fwd * 7.0f + right * 5.0f + glm::vec3(0.0f, 4.0f, 0.0f);
+            glm::vec3 lookTarget = playerPosition + fwd * 18.0f;
+            aimDirection = glm::normalize(lookTarget - cameraPosition);
+        }
+
         processPlayerInput(deltaTime);
         if (pendingShoot) {
             Bullet b;
-            b.position  = playerPosition + camera.forward() * 1.5f;
-            b.direction = camera.forward();
+            // Step 2: spawn at cone tip, aim at the world point found by the raycast.
+            b.position  = playerPosition + aimDirection * 2.0f;
+            b.direction = glm::normalize(findCrosshairTarget() - b.position);
             bullets.push_back(b);
             pendingShoot = false;
         }
