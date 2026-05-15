@@ -40,3 +40,30 @@ struct PushConstants {
     glm::mat4 model;
     glm::vec4 baseColor;
 };
+
+struct AABB {
+    glm::vec3 min, max;
+
+    bool intersects(const AABB& o) const {
+        return min.x <= o.max.x && max.x >= o.min.x &&
+               min.y <= o.max.y && max.y >= o.min.y &&
+               min.z <= o.max.z && max.z >= o.min.z;
+    }
+};
+
+// Computes the world-space AABB of a local box [localMin, localMax] transformed by m.
+// Uses the standard per-axis decomposition — correct for any affine transform.
+inline AABB transformAABB(const glm::vec3& localMin, const glm::vec3& localMax, const glm::mat4& m) {
+    glm::vec3 t = glm::vec3(m[3]);
+    AABB result{ t, t };
+    for (int col = 0; col < 3; ++col) {
+        for (int row = 0; row < 3; ++row) {
+            float e = m[col][row];
+            float a = e * localMin[col];
+            float b = e * localMax[col];
+            if (a < b) { result.min[row] += a; result.max[row] += b; }
+            else        { result.min[row] += b; result.max[row] += a; }
+        }
+    }
+    return result;
+}

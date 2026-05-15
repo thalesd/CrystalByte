@@ -136,6 +136,10 @@ private:
     void onMouseButton(int button, int action, int mods);
     void processPlayerInput(float dt);
 
+    // Gameplay
+    glm::mat4 playerModelMatrix() const;
+    void      checkCollisions();
+
     // Vulkan init
     void initVulkan();
     void createInstance();

@@ -1014,6 +1014,46 @@ void VulkanApplication::updateAsteroids(float dt) {
         a.rotAngle += a.rotSpeed * dt;
 }
 
+glm::mat4 VulkanApplication::playerModelMatrix() const {
+    glm::vec3 fwd    = camera.forward();
+    glm::vec3 up_ref = (std::abs(glm::dot(fwd, glm::vec3(0.0f, 1.0f, 0.0f))) < 0.99f)
+                       ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::vec3 col0   = glm::normalize(glm::cross(fwd, up_ref));
+    glm::vec3 col2   = glm::cross(col0, fwd);
+    glm::mat4 rot(1.0f);
+    rot[0] = glm::vec4(col0, 0.0f);
+    rot[1] = glm::vec4(fwd,  0.0f);
+    rot[2] = glm::vec4(col2, 0.0f);
+    return glm::translate(glm::mat4(1.0f), playerPosition) * rot;
+}
+
+void VulkanApplication::checkCollisions() {
+    static const glm::vec3 kLocalMin(-1.0f, -1.0f, -1.0f);
+    static const glm::vec3 kLocalMax( 1.0f,  1.0f,  1.0f);
+
+    AABB playerAABB = transformAABB(kLocalMin, kLocalMax, playerModelMatrix());
+
+    for (size_t i = 0; i < asteroids.size(); ++i) {
+        if (!asteroids[i].alive) continue;
+
+        AABB ai = transformAABB(kLocalMin, kLocalMax, asteroids[i].modelMatrix());
+
+        if (ai.intersects(playerAABB)) {
+            asteroids[i].alive = false;
+            continue;
+        }
+
+        for (size_t j = i + 1; j < asteroids.size(); ++j) {
+            if (!asteroids[j].alive) continue;
+            AABB aj = transformAABB(kLocalMin, kLocalMax, asteroids[j].modelMatrix());
+            if (ai.intersects(aj)) {
+                asteroids[i].alive = false;
+                asteroids[j].alive = false;
+            }
+        }
+    }
+}
+
 void VulkanApplication::processPlayerInput(float dt) {
     glm::vec3 fwd   = camera.forward();
     glm::vec3 right = glm::cross(fwd, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -1247,20 +1287,8 @@ void VulkanApplication::recordCommandBuffer(uint32_t imageIndex) {
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
     // --- Player (cone, blue) ---
-    // Build a rotation matrix that maps local +Y (cone apex) to camera forward.
     PushConstants playerPC{};
-    {
-        glm::vec3 fwd    = camera.forward();
-        glm::vec3 up_ref = (std::abs(glm::dot(fwd, glm::vec3(0.0f, 1.0f, 0.0f))) < 0.99f)
-                           ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
-        glm::vec3 col0   = glm::normalize(glm::cross(fwd, up_ref)); // local X → world right
-        glm::vec3 col2   = glm::cross(col0, fwd);                   // local Z → world up
-        glm::mat4 rot(1.0f);
-        rot[0] = glm::vec4(col0, 0.0f);
-        rot[1] = glm::vec4(fwd,  0.0f); // local Y → camera forward
-        rot[2] = glm::vec4(col2, 0.0f);
-        playerPC.model = glm::translate(glm::mat4(1.0f), playerPosition) * rot;
-    }
+    playerPC.model     = playerModelMatrix();
     playerPC.baseColor = glm::vec4(0.20f, 0.45f, 1.00f, 1.0f);
     vkCmdPushConstants(cb, pipelineLayout, kPushStages, 0, sizeof(PushConstants), &playerPC);
     vkCmdBindVertexBuffers(cb, 0, 1, &vertexBuffer, &zero);
@@ -1273,6 +1301,7 @@ void VulkanApplication::recordCommandBuffer(uint32_t imageIndex) {
     vkCmdBindVertexBuffers(cb, 0, 1, &asteroidVertexBuffer, &zero);
     vkCmdBindIndexBuffer(cb, asteroidIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
     for (const auto& asteroid : asteroids) {
+        if (!asteroid.alive) continue;
         asteroidPC.model = asteroid.modelMatrix();
         vkCmdPushConstants(cb, pipelineLayout, kPushStages, 0, sizeof(PushConstants), &asteroidPC);
         vkCmdDrawIndexed(cb, static_cast<uint32_t>(asteroidMesh.indices.size()), 1, 0, 0, 0);
@@ -1308,7 +1337,7 @@ void VulkanApplication::createSyncObjects() {
 
 void VulkanApplication::updateUniformBuffer() {
     glm::vec3 fwd    = camera.forward();
-    glm::vec3 camPos = playerPosition - fwd * 5.0f + glm::vec3(0.0f, 1.5f, 0.0f);
+    glm::vec3 camPos = playerPosition - fwd * 8.0f + glm::vec3(0.0f, 2.5f, 0.0f);
 
     UniformBufferObject ubo{};
     ubo.view = glm::lookAt(camPos, camPos + fwd, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -1381,6 +1410,7 @@ void VulkanApplication::mainLoop() {
         glfwPollEvents();
         processPlayerInput(deltaTime);
         updateAsteroids(deltaTime);
+        checkCollisions();
         drawFrame();
 
         if (targetFrameTime > 0.0) {
