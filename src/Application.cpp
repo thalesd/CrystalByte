@@ -35,13 +35,11 @@ void VulkanApplication::run(const std::string& modelPath, const LaunchConfig& cf
     else
         std::cout << "Texture: " << texturePath << "\n";
 
-    mesh         = Mesh::loadOBJ(modelPath);
+    mesh         = Mesh::makeCone(32);
     asteroidMesh = Mesh::makeSphere(16, 32);
     spawnAsteroids();
-    std::cout << "Loaded mesh: " << mesh.vertices.size() << " vertices, "
-              << mesh.indices.size() << " indices\n";
-    std::cout << "Asteroid sphere: " << asteroidMesh.vertices.size() << " vertices, "
-              << asteroidMesh.indices.size() << " indices\n";
+    std::cout << "Player cone: "   << mesh.vertices.size()         << " vertices\n";
+    std::cout << "Asteroid sphere: " << asteroidMesh.vertices.size() << " vertices\n";
     initWindow();
     initVulkan();
     mainLoop();
@@ -622,9 +620,9 @@ void VulkanApplication::createGraphicsPipeline() {
     blend.pAttachments    = &blendAtt;
 
     VkPushConstantRange pushRange{};
-    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushRange.offset     = 0;
-    pushRange.size       = sizeof(glm::mat4); // model matrix per draw call
+    pushRange.size       = sizeof(PushConstants); // model (64 B) + baseColor (16 B) = 80 B
 
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -1244,22 +1242,27 @@ void VulkanApplication::recordCommandBuffer(uint32_t imageIndex) {
 
     const VkDeviceSize zero = 0;
 
-    // --- Ship ---
-    glm::mat4 shipModel = glm::rotate(glm::mat4(1.0f), glm::radians(objectRotY), glm::vec3(0, 1, 0));
-    shipModel = glm::rotate(shipModel, glm::radians(objectRotX), glm::vec3(1, 0, 0));
-    vkCmdPushConstants(cb, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
-                       0, sizeof(glm::mat4), &shipModel);
+    constexpr VkShaderStageFlags kPushStages =
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    // --- Player (cone, blue) ---
+    PushConstants playerPC{};
+    playerPC.model     = glm::rotate(glm::mat4(1.0f), glm::radians(objectRotY), glm::vec3(0, 1, 0));
+    playerPC.model     = glm::rotate(playerPC.model,  glm::radians(objectRotX), glm::vec3(1, 0, 0));
+    playerPC.baseColor = glm::vec4(0.20f, 0.45f, 1.00f, 1.0f);
+    vkCmdPushConstants(cb, pipelineLayout, kPushStages, 0, sizeof(PushConstants), &playerPC);
     vkCmdBindVertexBuffers(cb, 0, 1, &vertexBuffer, &zero);
     vkCmdBindIndexBuffer(cb, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(cb, static_cast<uint32_t>(mesh.indices.size()), 1, 0, 0, 0);
 
-    // --- Asteroids ---
+    // --- Asteroids (spheres, orange) ---
+    PushConstants asteroidPC{};
+    asteroidPC.baseColor = glm::vec4(1.00f, 0.50f, 0.08f, 1.0f);
     vkCmdBindVertexBuffers(cb, 0, 1, &asteroidVertexBuffer, &zero);
     vkCmdBindIndexBuffer(cb, asteroidIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
     for (const auto& asteroid : asteroids) {
-        glm::mat4 m = asteroid.modelMatrix();
-        vkCmdPushConstants(cb, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
-                           0, sizeof(glm::mat4), &m);
+        asteroidPC.model = asteroid.modelMatrix();
+        vkCmdPushConstants(cb, pipelineLayout, kPushStages, 0, sizeof(PushConstants), &asteroidPC);
         vkCmdDrawIndexed(cb, static_cast<uint32_t>(asteroidMesh.indices.size()), 1, 0, 0, 0);
     }
 

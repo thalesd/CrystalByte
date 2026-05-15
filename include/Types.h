@@ -35,3 +35,8 @@ struct UniformBufferObject {
     glm::mat4 view;
     glm::mat4 proj;
 };
+
+struct PushConstants {
+    glm::mat4 model;
+    glm::vec4 baseColor;
+};

@@ -5,9 +5,9 @@ layout(binding = 0) uniform UniformBufferObject {
     mat4 proj;
 } ubo;
 
-// Per-draw model matrix via push constant (64 bytes, fits the guaranteed minimum)
 layout(push_constant) uniform PushConstants {
     mat4 model;
+    vec4 baseColor;
 } pc;
 
 layout(location = 0) in vec3 inPosition;
@@ -16,9 +16,11 @@ layout(location = 2) in vec2 inTexCoord;
 
 layout(location = 0) out vec3 fragNormal;
 layout(location = 1) out vec2 fragTexCoord;
+layout(location = 2) out vec4 fragBaseColor;
 
 void main() {
-    gl_Position  = ubo.proj * ubo.view * pc.model * vec4(inPosition, 1.0);
-    fragNormal   = normalize(mat3(pc.model) * inNormal);
-    fragTexCoord = inTexCoord;
+    gl_Position   = ubo.proj * ubo.view * pc.model * vec4(inPosition, 1.0);
+    fragNormal    = normalize(mat3(pc.model) * inNormal);
+    fragTexCoord  = inTexCoord;
+    fragBaseColor = pc.baseColor;
 }

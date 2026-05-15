@@ -128,3 +128,74 @@ Mesh Mesh::makeSphere(int stacks, int sectors) {
 
     return mesh;
 }
+
+Mesh Mesh::makeCone(int sectors) {
+    Mesh mesh;
+    const float pi = glm::pi<float>();
+
+    // Lateral surface — one triangle per sector: apex + two base edge vertices.
+    // Analytic outward normal for the unit cone (apex y=+1, base radius 1 at y=-1):
+    //   n(theta) = normalize(2*sin(theta), 1, 2*cos(theta))
+    for (int j = 0; j < sectors; ++j) {
+        float t0 = 2.0f * pi * static_cast<float>(j)     / sectors;
+        float t1 = 2.0f * pi * static_cast<float>(j + 1) / sectors;
+        float tM = (t0 + t1) * 0.5f;
+
+        Vertex a{}; // apex — midpoint normal for smooth shading at the tip
+        a.pos      = { 0.0f, 1.0f, 0.0f };
+        a.normal   = glm::normalize(glm::vec3(2.0f * std::sin(tM), 1.0f, 2.0f * std::cos(tM)));
+        a.texCoord = { (static_cast<float>(j) + 0.5f) / sectors, 0.0f };
+
+        Vertex b{};
+        b.pos      = { std::sin(t0), -1.0f, std::cos(t0) };
+        b.normal   = glm::normalize(glm::vec3(2.0f * std::sin(t0), 1.0f, 2.0f * std::cos(t0)));
+        b.texCoord = { static_cast<float>(j)     / sectors, 1.0f };
+
+        Vertex c{};
+        c.pos      = { std::sin(t1), -1.0f, std::cos(t1) };
+        c.normal   = glm::normalize(glm::vec3(2.0f * std::sin(t1), 1.0f, 2.0f * std::cos(t1)));
+        c.texCoord = { static_cast<float>(j + 1) / sectors, 1.0f };
+
+        uint32_t idx = static_cast<uint32_t>(mesh.vertices.size());
+        mesh.vertices.push_back(a);
+        mesh.vertices.push_back(b);
+        mesh.vertices.push_back(c);
+        mesh.indices.push_back(idx);
+        mesh.indices.push_back(idx + 1);
+        mesh.indices.push_back(idx + 2);
+    }
+
+    // Bottom cap — flat disk, normal pointing down (0,-1,0).
+    // CCW winding viewed from below: center → c → b.
+    for (int j = 0; j < sectors; ++j) {
+        float t0 = 2.0f * pi * static_cast<float>(j)     / sectors;
+        float t1 = 2.0f * pi * static_cast<float>(j + 1) / sectors;
+
+        const glm::vec3 dn = { 0.0f, -1.0f, 0.0f };
+
+        Vertex center{};
+        center.pos      = { 0.0f, -1.0f, 0.0f };
+        center.normal   = dn;
+        center.texCoord = { 0.5f, 0.5f };
+
+        Vertex b{};
+        b.pos      = { std::sin(t0), -1.0f, std::cos(t0) };
+        b.normal   = dn;
+        b.texCoord = { 0.5f + 0.5f * std::sin(t0), 0.5f + 0.5f * std::cos(t0) };
+
+        Vertex c{};
+        c.pos      = { std::sin(t1), -1.0f, std::cos(t1) };
+        c.normal   = dn;
+        c.texCoord = { 0.5f + 0.5f * std::sin(t1), 0.5f + 0.5f * std::cos(t1) };
+
+        uint32_t idx = static_cast<uint32_t>(mesh.vertices.size());
+        mesh.vertices.push_back(center);
+        mesh.vertices.push_back(b);
+        mesh.vertices.push_back(c);
+        mesh.indices.push_back(idx);
+        mesh.indices.push_back(idx + 2);
+        mesh.indices.push_back(idx + 1);
+    }
+
+    return mesh;
+}
