@@ -96,6 +96,13 @@ private:
     // --- Mesh ---
     Mesh mesh;
 
+    // --- Texture ---
+    std::string    texturePath;
+    VkImage        textureImage       = VK_NULL_HANDLE;
+    VkDeviceMemory textureImageMemory = VK_NULL_HANDLE;
+    VkImageView    textureImageView   = VK_NULL_HANDLE;
+    VkSampler      textureSampler     = VK_NULL_HANDLE;
+
     // --- Object rotation ---
     float objectRotX = 0.0f;
     float objectRotY = 0.0f;
@@ -126,6 +133,7 @@ private:
     void initVulkan();
     void createInstance();
     void createSurface();
+
     void pickPhysicalDevice();
     void createLogicalDevice();
     void createSwapChain();
@@ -136,6 +144,12 @@ private:
     void createDepthResources();
     void createFramebuffers();
     void createCommandPool();
+    void createTextureImage();
+    void createTextureImageView();
+    void createTextureSampler();
+    void transitionImageLayout(VkImage image, VkFormat format,
+                               VkImageLayout oldLayout, VkImageLayout newLayout);
+    void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
     void createVertexBuffer();
     void createIndexBuffer();
     void createUniformBuffer();

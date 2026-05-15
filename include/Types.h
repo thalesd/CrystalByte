@@ -3,10 +3,10 @@
 #include <glm/glm.hpp>
 #include <array>
 
-// Vertex layout sent to the GPU.
 struct Vertex {
     glm::vec3 pos;
-    glm::vec3 color;
+    glm::vec3 normal;
+    glm::vec2 texCoord;
 
     static VkVertexInputBindingDescription getBindingDescription() {
         VkVertexInputBindingDescription d{};
@@ -16,19 +16,21 @@ struct Vertex {
         return d;
     }
 
-    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions() {
-        std::array<VkVertexInputAttributeDescription, 2> a{};
+    static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions() {
+        std::array<VkVertexInputAttributeDescription, 3> a{};
         a[0].binding  = 0; a[0].location = 0;
         a[0].format   = VK_FORMAT_R32G32B32_SFLOAT;
         a[0].offset   = offsetof(Vertex, pos);
         a[1].binding  = 0; a[1].location = 1;
         a[1].format   = VK_FORMAT_R32G32B32_SFLOAT;
-        a[1].offset   = offsetof(Vertex, color);
+        a[1].offset   = offsetof(Vertex, normal);
+        a[2].binding  = 0; a[2].location = 2;
+        a[2].format   = VK_FORMAT_R32G32_SFLOAT;
+        a[2].offset   = offsetof(Vertex, texCoord);
         return a;
     }
 };
 
-// Uniform buffer sent to the vertex shader every frame.
 struct UniformBufferObject {
     glm::mat4 model;
     glm::mat4 view;

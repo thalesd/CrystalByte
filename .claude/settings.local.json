@@ -22,7 +22,8 @@
       "Bash(vcpkg install *)",
       "PowerShell(Start-Process \"c:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\\\\build\\\\bin\\\\Debug\\\\CrystalByte.exe\" -WorkingDirectory \"c:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\")",
       "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\" -Recurse -Directory | Select-Object -First 30 | ForEach-Object { $_.FullName })",
-      "Bash(cmake --build build --config Release)"
+      "Bash(cmake --build build --config Release)",
+      "Bash(dir \"c:\\\\Users\\\\Thales\\\\source\\\\repos\\\\CrystalByte\\\\assets\")"
     ]
   }
 }

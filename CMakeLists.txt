@@ -33,6 +33,7 @@ find_package(Vulkan REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(tinyobjloader CONFIG REQUIRED)
+find_package(Stb REQUIRED)
 
 # Compile GLSL shaders to SPIR-V at build time
 set(SHADER_DIR "${CMAKE_BINARY_DIR}/shaders")
@@ -64,6 +65,7 @@ add_executable(${PROJECT_NAME}
     src/Camera.cpp
     src/Mesh.cpp
     src/LaunchSettings.cpp
+    src/stb_impl.cpp
 )
 
 add_dependencies(${PROJECT_NAME} Shaders)
@@ -82,6 +84,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${VULKAN_INCLUDE_DIRS}
+    ${Stb_INCLUDE_DIR}
 )
 
 # Link libraries
