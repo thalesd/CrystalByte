@@ -64,6 +64,7 @@ add_custom_target(Shaders ALL DEPENDS ${SPV_SHADERS})
 add_executable(${PROJECT_NAME}
     src/main.cpp
     src/Application.cpp
+    src/BVH.cpp
     src/Camera.cpp
     src/Mesh.cpp
     src/LaunchSettings.cpp

@@ -12,6 +12,7 @@
 #include "Mesh.h"
 #include "Asteroid.h"
 #include "Bullet.h"
+#include "BVH.h"
 #include "LaunchSettings.h"
 
 // ---------------------------------------------------------------------------
@@ -103,6 +104,8 @@ private:
     // --- Asteroids ---
     Mesh                     asteroidMesh;
     std::vector<Asteroid>    asteroids;
+    BVH                      asteroidBVH;
+    bool                     bvhDirty = true;
     VkBuffer                 asteroidVertexBuffer       = VK_NULL_HANDLE;
     VkDeviceMemory           asteroidVertexBufferMemory = VK_NULL_HANDLE;
     VkBuffer                 asteroidIndexBuffer        = VK_NULL_HANDLE;

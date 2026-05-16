@@ -1107,6 +1107,7 @@ void VulkanApplication::spawnAsteroids() {
         asteroids.push_back(a);
     }
     std::cout << "Spawned " << asteroids.size() << " asteroids\n";
+    bvhDirty = true;
 }
 
 void VulkanApplication::updateAsteroids(float dt) {
@@ -1130,67 +1131,57 @@ glm::mat4 VulkanApplication::playerModelMatrix() const {
     return glm::translate(glm::mat4(1.0f), playerPosition) * rot * shape;
 }
 
-// Step 1 of two-step aim: cast the camera center ray against every live asteroid
-// (each is a sphere of radius 0.5 centered at asteroid.position after the 0.5 scale).
-// Returns the nearest hit point, or a far default if nothing is hit.
+// Step 1 of two-step aim: BVH ray-sphere query along the camera center ray.
+// Returns the nearest hit point, or a 500-unit fallback if nothing is in the crosshair.
 glm::vec3 VulkanApplication::findCrosshairTarget() const {
-    constexpr float kFar    = 500.0f;
-    constexpr float kRadius = 0.5f;
-    float nearestT = kFar;
-
-    for (const auto& a : asteroids) {
-        if (!a.alive) continue;
-        glm::vec3 oc   = cameraPosition - a.position;
-        float     proj = glm::dot(oc, aimDirection);
-        float     disc = proj * proj - (glm::dot(oc, oc) - kRadius * kRadius);
-        if (disc < 0.0f) continue;
-        float t = -proj - std::sqrt(disc);
-        if (t > 0.0f && t < nearestT)
-            nearestT = t;
-    }
-
-    return cameraPosition + aimDirection * nearestT;
+    constexpr float kFar = 500.0f;
+    float t = kFar;
+    asteroidBVH.raycast(cameraPosition, aimDirection, kFar, t);
+    return cameraPosition + aimDirection * t;
 }
 
 void VulkanApplication::checkCollisions() {
-    static const glm::vec3 kLocalMin(-1.0f, -1.0f, -1.0f);
-    static const glm::vec3 kLocalMax( 1.0f,  1.0f,  1.0f);
+    static std::vector<int> hits;
+    constexpr glm::vec3 kHalf(0.5f);
 
-    AABB playerAABB = transformAABB(kLocalMin, kLocalMax, playerModelMatrix());
-
-    for (size_t i = 0; i < asteroids.size(); ++i) {
+    // Player vs asteroids
+    AABB playerAABB = transformAABB(glm::vec3(-1.0f), glm::vec3(1.0f), playerModelMatrix());
+    hits.clear();
+    asteroidBVH.queryAABB(playerAABB, hits);
+    for (int i : hits) {
         if (!asteroids[i].alive) continue;
-
-        AABB ai = transformAABB(kLocalMin, kLocalMax, asteroids[i].modelMatrix());
-
-        if (ai.intersects(playerAABB)) {
-            asteroids[i].alive = false;
-            continue;
-        }
-
-        for (size_t j = i + 1; j < asteroids.size(); ++j) {
-            if (!asteroids[j].alive) continue;
-            AABB aj = transformAABB(kLocalMin, kLocalMax, asteroids[j].modelMatrix());
-            if (ai.intersects(aj)) {
-                asteroids[i].alive = false;
-                asteroids[j].alive = false;
-            }
-        }
+        asteroids[i].alive = false;
+        bvhDirty = true;
     }
 
     // Bullets vs asteroids
-    static const glm::vec3 kBulletHalf(0.12f);
     for (auto& bullet : bullets) {
         if (!bullet.alive) continue;
-        AABB ba{ bullet.position - kBulletHalf, bullet.position + kBulletHalf };
-        for (auto& asteroid : asteroids) {
-            if (!asteroid.alive) continue;
-            AABB aa = transformAABB(kLocalMin, kLocalMax, asteroid.modelMatrix());
-            if (ba.intersects(aa)) {
-                bullet.alive   = false;
-                asteroid.alive = false;
-                break;
-            }
+        AABB ba{ bullet.position - glm::vec3(0.12f), bullet.position + glm::vec3(0.12f) };
+        hits.clear();
+        asteroidBVH.queryAABB(ba, hits);
+        for (int i : hits) {
+            if (!asteroids[i].alive) continue;
+            bullet.alive       = false;
+            asteroids[i].alive = false;
+            bvhDirty = true;
+            break;
+        }
+    }
+
+    // Asteroid vs asteroid — query each alive asteroid against the BVH;
+    // process each pair (i < j) once, skip stale dead entries from the BVH.
+    for (int i = 0; i < (int)asteroids.size(); ++i) {
+        if (!asteroids[i].alive) continue;
+        AABB ai{ asteroids[i].position - kHalf, asteroids[i].position + kHalf };
+        hits.clear();
+        asteroidBVH.queryAABB(ai, hits);
+        for (int j : hits) {
+            if (j <= i || !asteroids[j].alive) continue;
+            asteroids[i].alive = false;
+            asteroids[j].alive = false;
+            bvhDirty = true;
+            break;
         }
     }
 }
@@ -1580,6 +1571,11 @@ void VulkanApplication::mainLoop() {
         lastFrameTime     = frameStart;
 
         glfwPollEvents();
+
+        if (bvhDirty) {
+            asteroidBVH.build(asteroids);
+            bvhDirty = false;
+        }
 
         // Recompute camera state before any game logic so all systems use the same frame's value.
         {
