@@ -1357,7 +1357,19 @@ void VulkanApplication::processPlayerInput(float dt) {
     if (rlen > 0.001f) right /= rlen;
     else right = glm::vec3(1.0f, 0.0f, 0.0f);
 
-    float speed = camera.moveSpeed;
+    // Thruster: hold Shift to ramp multiplier 1x → 5x (takes 4 s to max out),
+    // bleeds back to 1x at 3x/s on release so the boost doesn't linger.
+    constexpr float kMaxMult  = 5.0f;
+    constexpr float kRampUp   = 1.0f;
+    constexpr float kRampDown = 3.0f;
+    bool boosting = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT)  == GLFW_PRESS ||
+                    glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+    if (boosting)
+        thrusterMultiplier = std::min(thrusterMultiplier + kRampUp   * dt, kMaxMult);
+    else
+        thrusterMultiplier = std::max(thrusterMultiplier - kRampDown * dt, 1.0f);
+
+    float speed = camera.moveSpeed * thrusterMultiplier;
     if (glfwGetKey(window, GLFW_KEY_W)            == GLFW_PRESS) playerPosition += fwd   * speed * dt;
     if (glfwGetKey(window, GLFW_KEY_S)            == GLFW_PRESS) playerPosition -= fwd   * speed * dt;
     if (glfwGetKey(window, GLFW_KEY_A)            == GLFW_PRESS) playerPosition -= right * speed * dt;

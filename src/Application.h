@@ -134,6 +134,9 @@ private:
     glm::mat4 starfieldInvProj    = glm::mat4(1.0f);
     glm::mat4 starfieldInvViewRot = glm::mat4(1.0f);
 
+    // --- Thruster ---
+    float thrusterMultiplier = 1.0f; // 1x–5x; ramps while Shift held
+
     // --- Mouse state ---
     bool   firstMouseSample = true;
     double prevMouseX       = 0.0;
