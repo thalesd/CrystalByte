@@ -1088,30 +1088,72 @@ void VulkanApplication::createTextureSampler() {
 
 void VulkanApplication::spawnAsteroids() {
     std::mt19937 rng(42); // fixed seed — consistent layout every run
-    std::uniform_real_distribution<float> posXZ(-10.0f, 10.0f);
-    std::uniform_real_distribution<float> posY  (-2.5f,   2.5f);
-    std::normal_distribution<float>       velComp(0.0f,   1.0f);
-    std::uniform_real_distribution<float> velSpeed(1.0f,  4.0f);
-    std::uniform_real_distribution<float> axis   (-1.0f,  1.0f);
-    std::uniform_real_distribution<float> rotSpd (15.0f, 60.0f);
-    std::uniform_real_distribution<float> angle  (0.0f, 360.0f);
 
-    asteroids.reserve(12);
-    while (static_cast<int>(asteroids.size()) < 12) {
-        glm::vec3 pos(posXZ(rng), posY(rng), posXZ(rng));
-        if (glm::length(pos) < 2.5f) continue; // keep clear of the origin
+    // Shared distributions
+    std::normal_distribution<float>       randDir (0.0f,   1.0f);
+    std::uniform_real_distribution<float> axis    (-1.0f,  1.0f);
+    std::uniform_real_distribution<float> angle   (0.0f,  360.0f);
 
-        glm::vec3 dir(velComp(rng), velComp(rng), velComp(rng));
-        if (glm::length(dir) < 1e-4f) dir = glm::vec3(1.0f, 0.0f, 0.0f);
+    // --- Near field: 12 small fast asteroids close to the player ---
+    {
+        std::uniform_real_distribution<float> posXZ  (-10.0f, 10.0f);
+        std::uniform_real_distribution<float> posY   (-2.5f,   2.5f);
+        std::uniform_real_distribution<float> velSpeed(1.0f,   4.0f);
+        std::uniform_real_distribution<float> rotSpd (15.0f,  60.0f);
 
-        Asteroid a;
-        a.position = pos;
-        a.velocity = glm::normalize(dir) * velSpeed(rng);
-        a.rotAxis  = glm::normalize(glm::vec3(axis(rng), axis(rng), axis(rng)));
-        a.rotAngle = angle(rng);
-        a.rotSpeed = rotSpd(rng);
-        asteroids.push_back(a);
+        asteroids.reserve(12 + 4 * 20);
+        while (static_cast<int>(asteroids.size()) < 12) {
+            glm::vec3 pos(posXZ(rng), posY(rng), posXZ(rng));
+            if (glm::length(pos) < 2.5f) continue;
+
+            glm::vec3 dir(randDir(rng), randDir(rng), randDir(rng));
+            if (glm::length(dir) < 1e-4f) dir = glm::vec3(1, 0, 0);
+
+            Asteroid a;
+            a.position = pos;
+            a.velocity = glm::normalize(dir) * velSpeed(rng);
+            a.radius   = 0.5f;
+            a.rotAxis  = glm::normalize(glm::vec3(axis(rng), axis(rng), axis(rng)));
+            a.rotAngle = angle(rng);
+            a.rotSpeed = rotSpd(rng);
+            asteroids.push_back(a);
+        }
     }
+
+    // --- Far field: 4 clusters at ~250 units, slow-moving, varied sizes ---
+    {
+        std::uniform_real_distribution<float> clusterDist(200.0f, 300.0f);
+        std::normal_distribution<float>       spread     (0.0f,   15.0f);
+        std::uniform_real_distribution<float> farRadius  (0.8f,   2.5f);
+        std::uniform_real_distribution<float> clusterSpd (0.05f,  0.25f);
+        std::normal_distribution<float>       velPerturb (0.0f,   0.03f);
+        std::uniform_real_distribution<float> rotSpd     (5.0f,   20.0f);
+
+        for (int c = 0; c < 4; ++c) {
+            // Random cluster center at ~250 units; flatten Y so clusters stay
+            // roughly in the same plane as the player.
+            glm::vec3 cDir(randDir(rng), randDir(rng) * 0.3f, randDir(rng));
+            if (glm::length(cDir) < 1e-4f) cDir = glm::vec3(1, 0, 0);
+            glm::vec3 center = glm::normalize(cDir) * clusterDist(rng);
+
+            // All asteroids in this cluster share a slow base velocity
+            glm::vec3 bDir(randDir(rng), randDir(rng), randDir(rng));
+            if (glm::length(bDir) < 1e-4f) bDir = glm::vec3(0, 0, 1);
+            glm::vec3 baseVel = glm::normalize(bDir) * clusterSpd(rng);
+
+            for (int i = 0; i < 20; ++i) {
+                Asteroid a;
+                a.position = center + glm::vec3(spread(rng), spread(rng), spread(rng));
+                a.velocity = baseVel + glm::vec3(velPerturb(rng), velPerturb(rng), velPerturb(rng));
+                a.radius   = farRadius(rng);
+                a.rotAxis  = glm::normalize(glm::vec3(axis(rng), axis(rng), axis(rng)));
+                a.rotAngle = angle(rng);
+                a.rotSpeed = rotSpd(rng);
+                asteroids.push_back(a);
+            }
+        }
+    }
+
     std::cout << "Spawned " << asteroids.size() << " asteroids\n";
     bvhDirty = true;
 }
@@ -1152,7 +1194,6 @@ glm::vec3 VulkanApplication::findCrosshairTarget() const {
 
 void VulkanApplication::checkCollisions() {
     static std::vector<int> hits;
-    constexpr glm::vec3 kHalf(0.5f);
 
     // Player vs asteroids
     AABB playerAABB = transformAABB(glm::vec3(-1.0f), glm::vec3(1.0f), playerModelMatrix());
@@ -1183,7 +1224,8 @@ void VulkanApplication::checkCollisions() {
     // process each pair (i < j) once, skip stale dead entries from the BVH.
     for (int i = 0; i < (int)asteroids.size(); ++i) {
         if (!asteroids[i].alive) continue;
-        AABB ai{ asteroids[i].position - kHalf, asteroids[i].position + kHalf };
+        glm::vec3 r(asteroids[i].radius);
+        AABB ai{ asteroids[i].position - r, asteroids[i].position + r };
         hits.clear();
         asteroidBVH.queryAABB(ai, hits);
         for (int j : hits) {
@@ -1516,7 +1558,7 @@ void VulkanApplication::updateUniformBuffer() {
     ubo.view = glm::lookAt(cameraPosition, lookTarget, glm::vec3(0.0f, 1.0f, 0.0f));
     ubo.proj = glm::perspective(glm::radians(60.0f),
                                 static_cast<float>(swapChainExtent.width) / swapChainExtent.height,
-                                0.1f, 100.0f);
+                                0.1f, 500.0f);
     ubo.proj[1][1] *= -1.0f;
 
     std::memcpy(uniformBufferMapped, &ubo, sizeof(ubo));

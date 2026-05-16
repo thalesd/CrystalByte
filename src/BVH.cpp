@@ -37,7 +37,7 @@ int BVH::buildNode(std::vector<int>& ids, const std::vector<Asteroid>& asteroids
     AABB box{ glm::vec3(std::numeric_limits<float>::max()),
               glm::vec3(std::numeric_limits<float>::lowest()) };
     for (int i = start; i < end; ++i) {
-        AABB ab = sphereAABB(asteroids[ids[i]].position, 0.5f);
+        AABB ab = sphereAABB(asteroids[ids[i]].position, asteroids[ids[i]].radius);
         box.min = glm::min(box.min, ab.min);
         box.max = glm::max(box.max, ab.max);
     }
