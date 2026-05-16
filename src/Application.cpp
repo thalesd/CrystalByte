@@ -1089,21 +1089,27 @@ void VulkanApplication::createTextureSampler() {
 void VulkanApplication::spawnAsteroids() {
     std::mt19937 rng(42); // fixed seed — consistent layout every run
     std::uniform_real_distribution<float> posXZ(-10.0f, 10.0f);
-    std::uniform_real_distribution<float> posY(-2.5f,   2.5f);
-    std::uniform_real_distribution<float> axis(-1.0f,   1.0f);
-    std::uniform_real_distribution<float> speed(15.0f,  60.0f);
-    std::uniform_real_distribution<float> angle(0.0f,  360.0f);
+    std::uniform_real_distribution<float> posY  (-2.5f,   2.5f);
+    std::normal_distribution<float>       velComp(0.0f,   1.0f);
+    std::uniform_real_distribution<float> velSpeed(1.0f,  4.0f);
+    std::uniform_real_distribution<float> axis   (-1.0f,  1.0f);
+    std::uniform_real_distribution<float> rotSpd (15.0f, 60.0f);
+    std::uniform_real_distribution<float> angle  (0.0f, 360.0f);
 
     asteroids.reserve(12);
     while (static_cast<int>(asteroids.size()) < 12) {
         glm::vec3 pos(posXZ(rng), posY(rng), posXZ(rng));
         if (glm::length(pos) < 2.5f) continue; // keep clear of the origin
 
+        glm::vec3 dir(velComp(rng), velComp(rng), velComp(rng));
+        if (glm::length(dir) < 1e-4f) dir = glm::vec3(1.0f, 0.0f, 0.0f);
+
         Asteroid a;
         a.position = pos;
+        a.velocity = glm::normalize(dir) * velSpeed(rng);
         a.rotAxis  = glm::normalize(glm::vec3(axis(rng), axis(rng), axis(rng)));
         a.rotAngle = angle(rng);
-        a.rotSpeed = speed(rng);
+        a.rotSpeed = rotSpd(rng);
         asteroids.push_back(a);
     }
     std::cout << "Spawned " << asteroids.size() << " asteroids\n";
@@ -1111,8 +1117,12 @@ void VulkanApplication::spawnAsteroids() {
 }
 
 void VulkanApplication::updateAsteroids(float dt) {
-    for (auto& a : asteroids)
+    for (auto& a : asteroids) {
+        if (!a.alive) continue;
         a.rotAngle += a.rotSpeed * dt;
+        a.position += a.velocity * dt;
+    }
+    bvhDirty = true; // positions changed every frame
 }
 
 glm::mat4 VulkanApplication::playerModelMatrix() const {

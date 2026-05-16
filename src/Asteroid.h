@@ -4,6 +4,7 @@
 
 struct Asteroid {
     glm::vec3 position;
+    glm::vec3 velocity;
     glm::vec3 rotAxis;
     float     rotAngle = 0.0f;
     float     rotSpeed = 30.0f; // degrees per second
