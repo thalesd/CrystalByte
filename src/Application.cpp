@@ -1,5 +1,6 @@
 #include "Application.h"
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 #include <stb_image.h>
 #include <random>
 
@@ -122,6 +123,7 @@ void VulkanApplication::initVulkan() {
     createRenderPass();
     createGraphicsPipeline();
     createCrosshairPipeline();
+    createStarfieldPipeline();
     createDepthResources();
     createFramebuffers();
     createCommandPool();
@@ -739,6 +741,105 @@ void VulkanApplication::createCrosshairPipeline() {
     vkDestroyShaderModule(device, fragMod, nullptr);
     vkDestroyShaderModule(device, vertMod, nullptr);
     std::cout << "Crosshair pipeline created\n";
+}
+
+void VulkanApplication::createStarfieldPipeline() {
+    auto vertCode = readFile(std::string(SHADER_DIR) + "/starfield.vert.spv");
+    auto fragCode = readFile(std::string(SHADER_DIR) + "/starfield.frag.spv");
+    VkShaderModule vertMod = createShaderModule(vertCode);
+    VkShaderModule fragMod = createShaderModule(fragCode);
+
+    VkPipelineShaderStageCreateInfo stages[2] = {};
+    stages[0].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage  = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = vertMod;
+    stages[0].pName  = "main";
+    stages[1].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = fragMod;
+    stages[1].pName  = "main";
+
+    VkPipelineVertexInputStateCreateInfo vertInput{};
+    vertInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    VkPipelineInputAssemblyStateCreateInfo assembly{};
+    assembly.sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkViewport viewport{};
+    viewport.width    = static_cast<float>(swapChainExtent.width);
+    viewport.height   = static_cast<float>(swapChainExtent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor{};
+    scissor.extent = swapChainExtent;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports    = &viewport;
+    viewportState.scissorCount  = 1;
+    viewportState.pScissors     = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo raster{};
+    raster.sType       = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    raster.lineWidth   = 1.0f;
+    raster.cullMode    = VK_CULL_MODE_NONE;
+
+    VkPipelineMultisampleStateCreateInfo ms{};
+    ms.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo ds{};
+    ds.sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    ds.depthTestEnable  = VK_FALSE;
+    ds.depthWriteEnable = VK_FALSE;
+
+    VkPipelineColorBlendAttachmentState blendAtt{};
+    blendAtt.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+    VkPipelineColorBlendStateCreateInfo blend{};
+    blend.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    blend.attachmentCount = 1;
+    blend.pAttachments    = &blendAtt;
+
+    // Two mat4 push constants = 128 bytes (Vulkan guaranteed minimum)
+    VkPushConstantRange pcRange{};
+    pcRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pcRange.offset     = 0;
+    pcRange.size       = 128;
+
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges    = &pcRange;
+
+    if (vkCreatePipelineLayout(device, &layoutInfo, nullptr, &starfieldPipelineLayout) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create starfield pipeline layout");
+
+    VkGraphicsPipelineCreateInfo pipeInfo{};
+    pipeInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipeInfo.stageCount          = 2;
+    pipeInfo.pStages             = stages;
+    pipeInfo.pVertexInputState   = &vertInput;
+    pipeInfo.pInputAssemblyState = &assembly;
+    pipeInfo.pViewportState      = &viewportState;
+    pipeInfo.pRasterizationState = &raster;
+    pipeInfo.pMultisampleState   = &ms;
+    pipeInfo.pDepthStencilState  = &ds;
+    pipeInfo.pColorBlendState    = &blend;
+    pipeInfo.layout              = starfieldPipelineLayout;
+    pipeInfo.renderPass          = renderPass;
+
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeInfo, nullptr, &starfieldPipeline) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create starfield pipeline");
+
+    vkDestroyShaderModule(device, fragMod, nullptr);
+    vkDestroyShaderModule(device, vertMod, nullptr);
+    std::cout << "Starfield pipeline created\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -1456,9 +1557,9 @@ void VulkanApplication::recordCommandBuffer(uint32_t imageIndex) {
 
     VkClearValue clears[2];
     std::memset(clears, 0, sizeof(clears));
-    clears[0].color.float32[0] = 0.05f;
-    clears[0].color.float32[1] = 0.05f;
-    clears[0].color.float32[2] = 0.10f;
+    clears[0].color.float32[0] = 0.0f;
+    clears[0].color.float32[1] = 0.0f;
+    clears[0].color.float32[2] = 0.0f;
     clears[0].color.float32[3] = 1.0f;
     clears[1].depthStencil.depth   = 1.0f;
     clears[1].depthStencil.stencil = 0;
@@ -1472,6 +1573,17 @@ void VulkanApplication::recordCommandBuffer(uint32_t imageIndex) {
     rp.pClearValues      = clears;
 
     vkCmdBeginRenderPass(cb, &rp, VK_SUBPASS_CONTENTS_INLINE);
+
+    // --- Starfield (full-screen background, no depth read/write) ---
+    {
+        struct StarfieldPC { glm::mat4 invProj; glm::mat4 invViewRot; };
+        StarfieldPC sfPC{ starfieldInvProj, starfieldInvViewRot };
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, starfieldPipeline);
+        vkCmdPushConstants(cb, starfieldPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
+                           0, sizeof(StarfieldPC), &sfPC);
+        vkCmdDraw(cb, 3, 1, 0, 0);
+    }
+
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
@@ -1562,6 +1674,11 @@ void VulkanApplication::updateUniformBuffer() {
     ubo.proj[1][1] *= -1.0f;
 
     std::memcpy(uniformBufferMapped, &ubo, sizeof(ubo));
+
+    // Matrices needed by the starfield push constants each frame
+    starfieldInvProj    = glm::inverse(ubo.proj);
+    // Strip translation from the view matrix so stars don't shift with player movement
+    starfieldInvViewRot = glm::mat4(glm::transpose(glm::mat3(ubo.view)));
 }
 
 // ---------------------------------------------------------------------------
@@ -1676,6 +1793,8 @@ void VulkanApplication::cleanup() {
     vkDestroyFence(device, inFlightFence, nullptr);
     vkDestroyCommandPool(device, commandPool, nullptr);
     for (auto fb : swapChainFramebuffers) vkDestroyFramebuffer(device, fb, nullptr);
+    vkDestroyPipeline(device, starfieldPipeline, nullptr);
+    vkDestroyPipelineLayout(device, starfieldPipelineLayout, nullptr);
     vkDestroyPipeline(device, crosshairPipeline, nullptr);
     vkDestroyPipelineLayout(device, crosshairPipelineLayout, nullptr);
     vkDestroyPipeline(device, graphicsPipeline, nullptr);

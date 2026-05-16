@@ -44,6 +44,8 @@ set(GLSL_SHADERS
     "${CMAKE_SOURCE_DIR}/shaders/triangle.frag"
     "${CMAKE_SOURCE_DIR}/shaders/crosshair.vert"
     "${CMAKE_SOURCE_DIR}/shaders/crosshair.frag"
+    "${CMAKE_SOURCE_DIR}/shaders/starfield.vert"
+    "${CMAKE_SOURCE_DIR}/shaders/starfield.frag"
 )
 
 foreach(GLSL ${GLSL_SHADERS})

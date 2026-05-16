@@ -69,6 +69,8 @@ private:
     VkPipeline            graphicsPipeline        = VK_NULL_HANDLE;
     VkPipelineLayout      crosshairPipelineLayout = VK_NULL_HANDLE;
     VkPipeline            crosshairPipeline       = VK_NULL_HANDLE;
+    VkPipelineLayout      starfieldPipelineLayout = VK_NULL_HANDLE;
+    VkPipeline            starfieldPipeline       = VK_NULL_HANDLE;
 
     // --- Depth buffer ---
     VkImage        depthImage       = VK_NULL_HANDLE;
@@ -126,9 +128,11 @@ private:
     bool                pendingShoot   = false;
 
     // --- Camera + timing ---
-    Camera camera;
-    double lastFrameTime = 0.0;
-    float  deltaTime     = 0.0f;
+    Camera    camera;
+    double    lastFrameTime       = 0.0;
+    float     deltaTime           = 0.0f;
+    glm::mat4 starfieldInvProj    = glm::mat4(1.0f);
+    glm::mat4 starfieldInvViewRot = glm::mat4(1.0f);
 
     // --- Mouse state ---
     bool   firstMouseSample = true;
@@ -184,6 +188,7 @@ private:
     void spawnAsteroids();
     void updateAsteroids(float dt);
     void createCrosshairPipeline();
+    void createStarfieldPipeline();
     void recordCommandBuffer(uint32_t imageIndex);
 
     // Vulkan helpers
