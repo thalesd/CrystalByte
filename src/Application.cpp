@@ -1490,7 +1490,7 @@ glm::mat4 VulkanApplication::playerModelMatrix() const {
 // Step 1 of two-step aim: BVH ray-sphere query along the camera center ray.
 // Returns the nearest hit point, or a 500-unit fallback if nothing is in the crosshair.
 glm::vec3 VulkanApplication::findCrosshairTarget() const {
-    constexpr float kFar = 500.0f;
+    constexpr float kFar = 1000.0f;
     float t = kFar;
     asteroidBVH.raycast(cameraPosition, aimDirection, kFar, t);
     return cameraPosition + aimDirection * t;
@@ -1936,14 +1936,14 @@ void VulkanApplication::createSyncObjects() {
 
 void VulkanApplication::updateUniformBuffer() {
     glm::vec3 fwd        = camera.forward();
-    glm::vec3 lookTarget = playerPosition + fwd * 18.0f;
+    glm::vec3 lookTarget = playerPosition + fwd * 10.0f;
     // cameraPosition and aimDirection are already current (set in mainLoop before drawFrame).
 
     UniformBufferObject ubo{};
     ubo.view = glm::lookAt(cameraPosition, lookTarget, glm::vec3(0.0f, 1.0f, 0.0f));
     ubo.proj = glm::perspective(glm::radians(60.0f),
                                 static_cast<float>(swapChainExtent.width) / swapChainExtent.height,
-                                0.1f, 500.0f);
+                                0.1f, 1100.0f);
     ubo.proj[1][1] *= -1.0f;
 
     std::memcpy(uniformBufferMapped, &ubo, sizeof(ubo));
@@ -2022,9 +2022,8 @@ void VulkanApplication::mainLoop() {
         // Recompute camera state before any game logic so all systems use the same frame's value.
         {
             glm::vec3 fwd   = camera.forward();
-            glm::vec3 right = glm::normalize(glm::cross(fwd, glm::vec3(0.0f, 1.0f, 0.0f)));
-            cameraPosition = playerPosition - fwd * 7.0f + right * 5.0f + glm::vec3(0.0f, 4.0f, 0.0f);
-            glm::vec3 lookTarget = playerPosition + fwd * 18.0f;
+            cameraPosition = playerPosition - fwd * 6.0f + glm::vec3(0.0f, 3.0f, 0.0f);
+            glm::vec3 lookTarget = playerPosition + fwd * 10.0f;
             aimDirection = glm::normalize(lookTarget - cameraPosition);
         }
 
