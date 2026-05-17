@@ -28,12 +28,13 @@ static const char* framerateStr(int fps) {
     }
 }
 
-enum { ID_COMBO_RES = 100, ID_COMBO_FPS = 101 };
+enum { ID_COMBO_RES = 100, ID_COMBO_FPS = 101, ID_CHECK_BVH = 102 };
 
 struct DialogState {
     LaunchConfig* config;
     HWND          comboRes;
     HWND          comboFps;
+    HWND          checkBvh;
 };
 
 static LRESULT CALLBACK SettingsWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -56,6 +57,7 @@ static LRESULT CALLBACK SettingsWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
                 }
                 if (fi >= 0 && fi < (int)kFramerates.size())
                     state->config->targetFPS = kFramerates[fi];
+                state->config->showBvh  = (SendMessage(state->checkBvh, BM_GETCHECK, 0, 0) == BST_CHECKED);
                 state->config->accepted = true;
                 DestroyWindow(hwnd);
             } else if (id == IDCANCEL) {
@@ -87,8 +89,8 @@ LaunchConfig showLaunchSettings() {
     wc.hIcon          = LoadIconA(nullptr, IDI_APPLICATION);
     RegisterClassExA(&wc);
 
-    // Calculate window size to get a 310x155 client area
-    const int cW = 310, cH = 155;
+    // Calculate window size to get a 310x185 client area
+    const int cW = 310, cH = 185;
     RECT rc = { 0, 0, cW, cH };
     AdjustWindowRectEx(&rc, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME);
     int wW = rc.right  - rc.left;
@@ -135,13 +137,18 @@ LaunchConfig showLaunchSettings() {
         SendMessageA(state.comboFps, CB_ADDSTRING, 0, (LPARAM)framerateStr(fps));
     SendMessageA(state.comboFps, CB_SETCURSEL, 1, 0);  // default: 60 FPS
 
+    // BVH checkbox
+    state.checkBvh = CreateWindowExA(0, "BUTTON", "Show BVH wireframes",
+        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | WS_TABSTOP,
+        20, 100, 200, 20, hwnd, (HMENU)(INT_PTR)ID_CHECK_BVH, h, nullptr);
+
     // Buttons
     CreateWindowExA(0, "BUTTON", "Launch",
         WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | WS_TABSTOP,
-        55, 110, 90, 30, hwnd, (HMENU)IDOK, h, nullptr);
+        55, 140, 90, 30, hwnd, (HMENU)IDOK, h, nullptr);
     CreateWindowExA(0, "BUTTON", "Cancel",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
-        165, 110, 90, 30, hwnd, (HMENU)IDCANCEL, h, nullptr);
+        165, 140, 90, 30, hwnd, (HMENU)IDCANCEL, h, nullptr);
 
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);

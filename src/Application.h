@@ -69,8 +69,12 @@ private:
     VkPipeline            graphicsPipeline        = VK_NULL_HANDLE;
     VkPipelineLayout      crosshairPipelineLayout = VK_NULL_HANDLE;
     VkPipeline            crosshairPipeline       = VK_NULL_HANDLE;
-    VkPipelineLayout      starfieldPipelineLayout = VK_NULL_HANDLE;
-    VkPipeline            starfieldPipeline       = VK_NULL_HANDLE;
+    VkPipelineLayout      hudPipelineLayout       = VK_NULL_HANDLE;
+    VkPipeline            hudPipeline             = VK_NULL_HANDLE;
+    VkPipelineLayout      starfieldPipelineLayout    = VK_NULL_HANDLE;
+    VkPipeline            starfieldPipeline          = VK_NULL_HANDLE;
+    VkPipelineLayout      bvhWireframePipelineLayout = VK_NULL_HANDLE;
+    VkPipeline            bvhWireframePipeline       = VK_NULL_HANDLE;
 
     // --- Depth buffer ---
     VkImage        depthImage       = VK_NULL_HANDLE;
@@ -124,6 +128,8 @@ private:
     glm::vec3           playerPosition  = glm::vec3(0.0f, 0.0f, 0.0f);
     glm::vec3           aimDirection    = glm::vec3(0.0f, 0.0f, -1.0f);
     glm::vec3           cameraPosition  = glm::vec3(0.0f, 0.0f, 5.0f);
+    float               playerHealth    = 1.0f;
+    float               playerEnergy    = 1.0f;
     std::vector<Bullet> bullets;
     bool                pendingShoot   = false;
 
@@ -191,7 +197,9 @@ private:
     void spawnAsteroids();
     void updateAsteroids(float dt);
     void createCrosshairPipeline();
+    void createHudPipeline();
     void createStarfieldPipeline();
+    void createBvhWireframePipeline();
     void recordCommandBuffer(uint32_t imageIndex);
 
     // Vulkan helpers

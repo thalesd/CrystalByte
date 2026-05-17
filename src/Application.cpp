@@ -124,6 +124,8 @@ void VulkanApplication::initVulkan() {
     createGraphicsPipeline();
     createCrosshairPipeline();
     createStarfieldPipeline();
+    createHudPipeline();
+    createBvhWireframePipeline();
     createDepthResources();
     createFramebuffers();
     createCommandPool();
@@ -743,6 +745,207 @@ void VulkanApplication::createCrosshairPipeline() {
     std::cout << "Crosshair pipeline created\n";
 }
 
+void VulkanApplication::createHudPipeline() {
+    auto vertCode = readFile(std::string(SHADER_DIR) + "/hud.vert.spv");
+    auto fragCode = readFile(std::string(SHADER_DIR) + "/hud.frag.spv");
+    VkShaderModule vertMod = createShaderModule(vertCode);
+    VkShaderModule fragMod = createShaderModule(fragCode);
+
+    VkPipelineShaderStageCreateInfo stages[2] = {};
+    stages[0].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage  = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = vertMod;
+    stages[0].pName  = "main";
+    stages[1].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = fragMod;
+    stages[1].pName  = "main";
+
+    VkPipelineVertexInputStateCreateInfo vertInput{};
+    vertInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    VkPipelineInputAssemblyStateCreateInfo assembly{};
+    assembly.sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkViewport viewport{};
+    viewport.width    = static_cast<float>(swapChainExtent.width);
+    viewport.height   = static_cast<float>(swapChainExtent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor{};
+    scissor.extent = swapChainExtent;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports    = &viewport;
+    viewportState.scissorCount  = 1;
+    viewportState.pScissors     = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo raster{};
+    raster.sType       = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    raster.lineWidth   = 1.0f;
+    raster.cullMode    = VK_CULL_MODE_NONE;
+
+    VkPipelineMultisampleStateCreateInfo ms{};
+    ms.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo ds{};
+    ds.sType           = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    ds.depthTestEnable = VK_FALSE;
+
+    VkPipelineColorBlendAttachmentState blendAtt{};
+    blendAtt.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+    VkPipelineColorBlendStateCreateInfo blend{};
+    blend.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    blend.attachmentCount = 1;
+    blend.pAttachments    = &blendAtt;
+
+    // rect(vec4) + color(vec4) + fill(float) = 36 bytes, accessed by both stages
+    VkPushConstantRange pcRange{};
+    pcRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pcRange.offset     = 0;
+    pcRange.size       = sizeof(glm::vec4) * 2 + sizeof(float); // 36 bytes
+
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges    = &pcRange;
+
+    if (vkCreatePipelineLayout(device, &layoutInfo, nullptr, &hudPipelineLayout) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create HUD pipeline layout");
+
+    VkGraphicsPipelineCreateInfo pipeInfo{};
+    pipeInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipeInfo.stageCount          = 2;
+    pipeInfo.pStages             = stages;
+    pipeInfo.pVertexInputState   = &vertInput;
+    pipeInfo.pInputAssemblyState = &assembly;
+    pipeInfo.pViewportState      = &viewportState;
+    pipeInfo.pRasterizationState = &raster;
+    pipeInfo.pMultisampleState   = &ms;
+    pipeInfo.pDepthStencilState  = &ds;
+    pipeInfo.pColorBlendState    = &blend;
+    pipeInfo.layout              = hudPipelineLayout;
+    pipeInfo.renderPass          = renderPass;
+
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeInfo, nullptr, &hudPipeline) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create HUD pipeline");
+
+    vkDestroyShaderModule(device, fragMod, nullptr);
+    vkDestroyShaderModule(device, vertMod, nullptr);
+    std::cout << "HUD pipeline created\n";
+}
+
+void VulkanApplication::createBvhWireframePipeline() {
+    auto vertCode = readFile(std::string(SHADER_DIR) + "/bvh_box.vert.spv");
+    auto fragCode = readFile(std::string(SHADER_DIR) + "/bvh_box.frag.spv");
+    VkShaderModule vertMod = createShaderModule(vertCode);
+    VkShaderModule fragMod = createShaderModule(fragCode);
+
+    VkPipelineShaderStageCreateInfo stages[2] = {};
+    stages[0].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage  = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = vertMod;
+    stages[0].pName  = "main";
+    stages[1].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = fragMod;
+    stages[1].pName  = "main";
+
+    VkPipelineVertexInputStateCreateInfo vertInput{};
+    vertInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    VkPipelineInputAssemblyStateCreateInfo assembly{};
+    assembly.sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+
+    VkViewport viewport{};
+    viewport.width    = static_cast<float>(swapChainExtent.width);
+    viewport.height   = static_cast<float>(swapChainExtent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor{};
+    scissor.extent = swapChainExtent;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports    = &viewport;
+    viewportState.scissorCount  = 1;
+    viewportState.pScissors     = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo raster{};
+    raster.sType       = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    raster.lineWidth   = 1.0f;
+    raster.cullMode    = VK_CULL_MODE_NONE;
+
+    VkPipelineMultisampleStateCreateInfo ms{};
+    ms.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // Depth test on so boxes sit in the scene, no depth write so they don't occlude other geometry
+    VkPipelineDepthStencilStateCreateInfo ds{};
+    ds.sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    ds.depthTestEnable  = VK_TRUE;
+    ds.depthWriteEnable = VK_FALSE;
+    ds.depthCompareOp   = VK_COMPARE_OP_LESS;
+
+    VkPipelineColorBlendAttachmentState blendAtt{};
+    blendAtt.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+    VkPipelineColorBlendStateCreateInfo blend{};
+    blend.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    blend.attachmentCount = 1;
+    blend.pAttachments    = &blendAtt;
+
+    // bmin(vec4) + bmax(vec4) + color(vec4) = 48 bytes, both stages
+    VkPushConstantRange pcRange{};
+    pcRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pcRange.offset     = 0;
+    pcRange.size       = sizeof(glm::vec4) * 3; // 48 bytes
+
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount         = 1;
+    layoutInfo.pSetLayouts            = &descriptorSetLayout; // reuse UBO binding
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges    = &pcRange;
+
+    if (vkCreatePipelineLayout(device, &layoutInfo, nullptr, &bvhWireframePipelineLayout) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create BVH wireframe pipeline layout");
+
+    VkGraphicsPipelineCreateInfo pipeInfo{};
+    pipeInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipeInfo.stageCount          = 2;
+    pipeInfo.pStages             = stages;
+    pipeInfo.pVertexInputState   = &vertInput;
+    pipeInfo.pInputAssemblyState = &assembly;
+    pipeInfo.pViewportState      = &viewportState;
+    pipeInfo.pRasterizationState = &raster;
+    pipeInfo.pMultisampleState   = &ms;
+    pipeInfo.pDepthStencilState  = &ds;
+    pipeInfo.pColorBlendState    = &blend;
+    pipeInfo.layout              = bvhWireframePipelineLayout;
+    pipeInfo.renderPass          = renderPass;
+
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeInfo, nullptr, &bvhWireframePipeline) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create BVH wireframe pipeline");
+
+    vkDestroyShaderModule(device, fragMod, nullptr);
+    vkDestroyShaderModule(device, vertMod, nullptr);
+    std::cout << "BVH wireframe pipeline created\n";
+}
+
 void VulkanApplication::createStarfieldPipeline() {
     auto vertCode = readFile(std::string(SHADER_DIR) + "/starfield.vert.spv");
     auto fragCode = readFile(std::string(SHADER_DIR) + "/starfield.frag.spv");
@@ -1188,7 +1391,7 @@ void VulkanApplication::createTextureSampler() {
 // ---------------------------------------------------------------------------
 
 void VulkanApplication::spawnAsteroids() {
-    std::mt19937 rng(42); // fixed seed — consistent layout every run
+    std::mt19937 rng(std::random_device{}());
 
     // Shared distributions
     std::normal_distribution<float>       randDir (0.0f,   1.0f);
@@ -1304,6 +1507,7 @@ void VulkanApplication::checkCollisions() {
         if (!asteroids[i].alive) continue;
         asteroids[i].alive = false;
         bvhDirty = true;
+        playerHealth = std::max(0.0f, playerHealth - 0.2f);
     }
 
     // Bullets vs asteroids
@@ -1637,6 +1841,30 @@ void VulkanApplication::recordCommandBuffer(uint32_t imageIndex) {
         vkCmdDrawIndexed(cb, static_cast<uint32_t>(asteroidMesh.indices.size()), 1, 0, 0, 0);
     }
 
+    // --- BVH node wireframes (only when enabled in launch settings) ---
+    if (config.showBvh && !asteroidBVH.empty()) {
+        struct BvhBoxPC { glm::vec4 bmin; glm::vec4 bmax; glm::vec4 color; };
+        constexpr VkShaderStageFlags kBvhStages =
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, bvhWireframePipeline);
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                bvhWireframePipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+
+        for (const auto& node : asteroidBVH.nodes()) {
+            BvhBoxPC pc;
+            pc.bmin  = glm::vec4(node.aabb.min, 0.0f);
+            pc.bmax  = glm::vec4(node.aabb.max, 0.0f);
+            // Cyan for leaves (individual asteroids), dim gray for inner nodes
+            pc.color = (node.left == -1)
+                       ? glm::vec4(0.0f, 0.85f, 1.0f, 1.0f)
+                       : glm::vec4(0.35f, 0.35f, 0.35f, 1.0f);
+            vkCmdPushConstants(cb, bvhWireframePipelineLayout, kBvhStages,
+                               0, sizeof(BvhBoxPC), &pc);
+            vkCmdDraw(cb, 24, 1, 0, 0);
+        }
+    }
+
     // --- Crosshair (2D overlay, depth-test disabled) ---
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, crosshairPipeline);
     float aspect = static_cast<float>(swapChainExtent.width) /
@@ -1644,6 +1872,39 @@ void VulkanApplication::recordCommandBuffer(uint32_t imageIndex) {
     vkCmdPushConstants(cb, crosshairPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
                        0, sizeof(float), &aspect);
     vkCmdDraw(cb, 12, 1, 0, 0);
+
+    // --- HUD bars (top-left corner, depth-test disabled) ---
+    // Push constant layout matches hud.vert/frag: rect(vec4), color(vec4), fill(float)
+    struct HudBarPC { glm::vec4 rect; glm::vec4 color; float fill; };
+    constexpr VkShaderStageFlags kHudStages =
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, hudPipeline);
+
+    // x=-0.95  y=-0.97  w=0.45  h=0.05  (Vulkan NDC: y=-1 is top)
+    const glm::vec4 healthRect(-0.95f, -0.97f, 0.45f, 0.05f);
+    const glm::vec4 energyRect(-0.95f, -0.89f, 0.45f, 0.05f);
+
+    // Health background (dark red)
+    HudBarPC pc{ healthRect, glm::vec4(0.25f, 0.04f, 0.04f, 1.0f), 1.0f };
+    vkCmdPushConstants(cb, hudPipelineLayout, kHudStages, 0, sizeof(HudBarPC), &pc);
+    vkCmdDraw(cb, 6, 1, 0, 0);
+
+    // Health fill (green → yellow → red based on amount)
+    float h = playerHealth;
+    pc = { healthRect, glm::vec4(1.0f - h, h, 0.05f, 1.0f), h };
+    vkCmdPushConstants(cb, hudPipelineLayout, kHudStages, 0, sizeof(HudBarPC), &pc);
+    vkCmdDraw(cb, 6, 1, 0, 0);
+
+    // Energy background (dark blue)
+    pc = { energyRect, glm::vec4(0.04f, 0.04f, 0.28f, 1.0f), 1.0f };
+    vkCmdPushConstants(cb, hudPipelineLayout, kHudStages, 0, sizeof(HudBarPC), &pc);
+    vkCmdDraw(cb, 6, 1, 0, 0);
+
+    // Energy fill (cyan)
+    pc = { energyRect, glm::vec4(0.10f, 0.70f, 1.00f, 1.0f), playerEnergy };
+    vkCmdPushConstants(cb, hudPipelineLayout, kHudStages, 0, sizeof(HudBarPC), &pc);
+    vkCmdDraw(cb, 6, 1, 0, 0);
 
     vkCmdEndRenderPass(cb);
     if (vkEndCommandBuffer(cb) != VK_SUCCESS)
@@ -1768,12 +2029,19 @@ void VulkanApplication::mainLoop() {
         }
 
         processPlayerInput(deltaTime);
+
+        constexpr float kShotCost   = 0.15f;
+        constexpr float kEnergyRegen = 0.10f;
+        playerEnergy = std::min(1.0f, playerEnergy + kEnergyRegen * deltaTime);
+
         if (pendingShoot) {
-            Bullet b;
-            // Step 2: spawn at cone tip, aim at the world point found by the raycast.
-            b.position  = playerPosition + aimDirection * 2.0f;
-            b.direction = glm::normalize(findCrosshairTarget() - b.position);
-            bullets.push_back(b);
+            if (playerEnergy >= kShotCost) {
+                playerEnergy -= kShotCost;
+                Bullet b;
+                b.position  = playerPosition + aimDirection * 2.0f;
+                b.direction = glm::normalize(findCrosshairTarget() - b.position);
+                bullets.push_back(b);
+            }
             pendingShoot = false;
         }
         updateBullets(deltaTime);
@@ -1807,6 +2075,10 @@ void VulkanApplication::cleanup() {
     for (auto fb : swapChainFramebuffers) vkDestroyFramebuffer(device, fb, nullptr);
     vkDestroyPipeline(device, starfieldPipeline, nullptr);
     vkDestroyPipelineLayout(device, starfieldPipelineLayout, nullptr);
+    vkDestroyPipeline(device, bvhWireframePipeline, nullptr);
+    vkDestroyPipelineLayout(device, bvhWireframePipelineLayout, nullptr);
+    vkDestroyPipeline(device, hudPipeline, nullptr);
+    vkDestroyPipelineLayout(device, hudPipelineLayout, nullptr);
     vkDestroyPipeline(device, crosshairPipeline, nullptr);
     vkDestroyPipelineLayout(device, crosshairPipelineLayout, nullptr);
     vkDestroyPipeline(device, graphicsPipeline, nullptr);

@@ -25,6 +25,7 @@ public:
     void queryAABB(const AABB& query, std::vector<int>& out) const;
 
     bool empty() const { return nodes_.empty(); }
+    const std::vector<BVHNode>& nodes() const { return nodes_; }
 
 private:
     std::vector<BVHNode> nodes_;
