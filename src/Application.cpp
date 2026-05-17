@@ -38,7 +38,9 @@ void VulkanApplication::run(const std::string& modelPath, const LaunchConfig& cf
 
     mesh         = Mesh::makeCone(32);
     asteroidMesh = Mesh::makeSphere(16, 32);
+    cubeMesh     = Mesh::makeCube();
     spawnAsteroids();
+    spawnVoxelAsteroids();
     std::cout << "Player cone: "   << mesh.vertices.size()         << " vertices\n";
     std::cout << "Asteroid sphere: " << asteroidMesh.vertices.size() << " vertices\n";
     initWindow();
@@ -130,6 +132,7 @@ void VulkanApplication::initVulkan() {
     createFramebuffers();
     createCommandPool();
     createAsteroidBuffers();
+    createCubeBuffers();
     createTextureImage();
     createTextureImageView();
     createTextureSampler();
@@ -1462,6 +1465,88 @@ void VulkanApplication::spawnAsteroids() {
     bvhDirty = true;
 }
 
+void VulkanApplication::spawnVoxelAsteroids() {
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<float> scatter(-4.0f, 4.0f);
+    std::uniform_real_distribution<float> vel(-0.2f, 0.2f);
+
+    const glm::vec3 centers[] = {
+        {   5.0f,  2.0f, -30.0f },
+        { -18.0f, -4.0f, -45.0f },
+        {  22.0f,  6.0f, -38.0f },
+        {  -5.0f,  8.0f, -55.0f },
+    };
+
+    for (const auto& c : centers) {
+        VoxelAsteroid va;
+        va.position = c + glm::vec3(scatter(rng), scatter(rng), scatter(rng));
+        va.velocity = glm::vec3(vel(rng), vel(rng), vel(rng));
+        va.generate(rng);
+        voxelAsteroids.push_back(va);
+    }
+    std::cout << "Spawned " << voxelAsteroids.size() << " voxel asteroids\n";
+}
+
+void VulkanApplication::updateVoxelAsteroids(float dt) {
+    for (auto& va : voxelAsteroids) {
+        if (!va.alive) continue;
+        va.position += va.velocity * dt;
+        if (va.voxelsRemaining <= 0) va.alive = false;
+    }
+}
+
+void VulkanApplication::checkVoxelCollisions() {
+    for (auto& bullet : bullets) {
+        if (!bullet.alive) continue;
+        for (auto& va : voxelAsteroids) {
+            if (!va.alive) continue;
+            AABB b = va.bounds();
+            if (bullet.position.x < b.min.x || bullet.position.x > b.max.x ||
+                bullet.position.y < b.min.y || bullet.position.y > b.max.y ||
+                bullet.position.z < b.min.z || bullet.position.z > b.max.z)
+                continue;
+            int gx, gy, gz;
+            if (!va.worldToGrid(bullet.position, gx, gy, gz)) continue;
+            VoxelType& vt = va.grid[gx][gy][gz];
+            if (vt == VoxelType::Empty) continue;
+            if (vt == VoxelType::Silver) {
+                PickupItem p;
+                p.position = va.voxelCenter(gx, gy, gz);
+                glm::vec3 outward = p.position - va.position;
+                float len = glm::length(outward);
+                p.velocity = (len > 0.001f ? outward / len : glm::vec3(0,1,0)) * 1.5f;
+                pickups.push_back(p);
+            }
+            vt = VoxelType::Empty;
+            --va.voxelsRemaining;
+            bullet.alive = false;
+            break;
+        }
+    }
+}
+
+void VulkanApplication::updatePickups(float dt) {
+    bool collected = false;
+    for (auto& p : pickups) {
+        if (!p.alive) continue;
+        p.position += p.velocity * dt;
+        p.lifetime -= dt;
+        if (p.lifetime <= 0.0f) { p.alive = false; continue; }
+        if (glm::length(p.position - playerPosition) < 2.0f) {
+            p.alive = false;
+            ++metalCount;
+            collected = true;
+        }
+    }
+    if (collected)
+        glfwSetWindowTitle(window,
+            ("CrystalByte  |  Metal: " + std::to_string(metalCount)).c_str());
+    pickups.erase(
+        std::remove_if(pickups.begin(), pickups.end(),
+                       [](const PickupItem& p) { return !p.alive; }),
+        pickups.end());
+}
+
 void VulkanApplication::updateAsteroids(float dt) {
     for (auto& a : asteroids) {
         if (!a.alive) continue;
@@ -1620,6 +1705,46 @@ void VulkanApplication::createAsteroidBuffers() {
         vkFreeMemory(device, stagingMem, nullptr);
     }
     std::cout << "Asteroid GPU buffers created\n";
+}
+
+void VulkanApplication::createCubeBuffers() {
+    // Vertex buffer
+    {
+        VkDeviceSize size = sizeof(Vertex) * cubeMesh.vertices.size();
+        VkBuffer staging; VkDeviceMemory stagingMem;
+        createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     staging, stagingMem);
+        void* data;
+        vkMapMemory(device, stagingMem, 0, size, 0, &data);
+        std::memcpy(data, cubeMesh.vertices.data(), static_cast<size_t>(size));
+        vkUnmapMemory(device, stagingMem);
+        createBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                     cubeVertexBuffer, cubeVertexBufferMemory);
+        copyBuffer(staging, cubeVertexBuffer, size);
+        vkDestroyBuffer(device, staging, nullptr);
+        vkFreeMemory(device, stagingMem, nullptr);
+    }
+    // Index buffer
+    {
+        VkDeviceSize size = sizeof(uint32_t) * cubeMesh.indices.size();
+        VkBuffer staging; VkDeviceMemory stagingMem;
+        createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     staging, stagingMem);
+        void* data;
+        vkMapMemory(device, stagingMem, 0, size, 0, &data);
+        std::memcpy(data, cubeMesh.indices.data(), static_cast<size_t>(size));
+        vkUnmapMemory(device, stagingMem);
+        createBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                     cubeIndexBuffer, cubeIndexBufferMemory);
+        copyBuffer(staging, cubeIndexBuffer, size);
+        vkDestroyBuffer(device, staging, nullptr);
+        vkFreeMemory(device, stagingMem, nullptr);
+    }
+    std::cout << "Cube buffers created\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -1841,6 +1966,47 @@ void VulkanApplication::recordCommandBuffer(uint32_t imageIndex) {
         vkCmdDrawIndexed(cb, static_cast<uint32_t>(asteroidMesh.indices.size()), 1, 0, 0, 0);
     }
 
+    // --- Voxel asteroids ---
+    {
+        const glm::vec4 kRockColor  (0.55f, 0.45f, 0.35f, 1.0f);
+        const glm::vec4 kSilverColor(0.80f, 0.88f, 0.95f, 1.0f);
+        PushConstants voxPC{};
+        vkCmdBindVertexBuffers(cb, 0, 1, &cubeVertexBuffer, &zero);
+        vkCmdBindIndexBuffer(cb, cubeIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        for (const auto& va : voxelAsteroids) {
+            if (!va.alive) continue;
+            for (int x = 0; x < VoxelAsteroid::kGrid; ++x)
+            for (int y = 0; y < VoxelAsteroid::kGrid; ++y)
+            for (int z = 0; z < VoxelAsteroid::kGrid; ++z) {
+                VoxelType vt = va.grid[x][y][z];
+                if (vt == VoxelType::Empty) continue;
+                voxPC.model     = glm::scale(
+                                    glm::translate(glm::mat4(1.0f), va.voxelCenter(x, y, z)),
+                                    glm::vec3(VoxelAsteroid::kVoxelSize));
+                voxPC.baseColor = (vt == VoxelType::Silver) ? kSilverColor : kRockColor;
+                vkCmdPushConstants(cb, pipelineLayout, kPushStages,
+                                   0, sizeof(PushConstants), &voxPC);
+                vkCmdDrawIndexed(cb, static_cast<uint32_t>(cubeMesh.indices.size()), 1, 0, 0, 0);
+            }
+        }
+    }
+
+    // --- Metal pickups (gold spheres) ---
+    if (!pickups.empty()) {
+        PushConstants pickupPC{};
+        pickupPC.baseColor = glm::vec4(1.0f, 0.78f, 0.08f, 1.0f);
+        vkCmdBindVertexBuffers(cb, 0, 1, &asteroidVertexBuffer, &zero);
+        vkCmdBindIndexBuffer(cb, asteroidIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        for (const auto& p : pickups) {
+            if (!p.alive) continue;
+            pickupPC.model = glm::scale(glm::translate(glm::mat4(1.0f), p.position),
+                                        glm::vec3(0.4f));
+            vkCmdPushConstants(cb, pipelineLayout, kPushStages,
+                               0, sizeof(PushConstants), &pickupPC);
+            vkCmdDrawIndexed(cb, static_cast<uint32_t>(asteroidMesh.indices.size()), 1, 0, 0, 0);
+        }
+    }
+
     // --- BVH node wireframes (only when enabled in launch settings) ---
     if (config.showBvh && !asteroidBVH.empty()) {
         struct BvhBoxPC { glm::vec4 bmin; glm::vec4 bmax; glm::vec4 color; };
@@ -2046,6 +2212,9 @@ void VulkanApplication::mainLoop() {
         updateBullets(deltaTime);
         updateAsteroids(deltaTime);
         checkCollisions();
+        updateVoxelAsteroids(deltaTime);
+        checkVoxelCollisions();
+        updatePickups(deltaTime);
         drawFrame();
 
         if (targetFrameTime > 0.0) {
@@ -2097,6 +2266,10 @@ void VulkanApplication::cleanup() {
     vkFreeMemory(device, asteroidIndexBufferMemory, nullptr);
     vkDestroyBuffer(device, asteroidVertexBuffer, nullptr);
     vkFreeMemory(device, asteroidVertexBufferMemory, nullptr);
+    vkDestroyBuffer(device, cubeIndexBuffer, nullptr);
+    vkFreeMemory(device, cubeIndexBufferMemory, nullptr);
+    vkDestroyBuffer(device, cubeVertexBuffer, nullptr);
+    vkFreeMemory(device, cubeVertexBufferMemory, nullptr);
     vkDestroyBuffer(device, indexBuffer, nullptr);
     vkFreeMemory(device, indexBufferMemory, nullptr);
     vkDestroyBuffer(device, vertexBuffer, nullptr);

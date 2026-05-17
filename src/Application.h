@@ -12,6 +12,8 @@
 #include "Mesh.h"
 #include "Asteroid.h"
 #include "Bullet.h"
+#include "VoxelAsteroid.h"
+#include "PickupItem.h"
 #include "BVH.h"
 #include "LaunchSettings.h"
 
@@ -117,6 +119,18 @@ private:
     VkBuffer                 asteroidIndexBuffer        = VK_NULL_HANDLE;
     VkDeviceMemory           asteroidIndexBufferMemory  = VK_NULL_HANDLE;
 
+    // --- Voxel asteroids ---
+    std::vector<VoxelAsteroid> voxelAsteroids;
+    Mesh                       cubeMesh;
+    VkBuffer                   cubeVertexBuffer       = VK_NULL_HANDLE;
+    VkDeviceMemory             cubeVertexBufferMemory = VK_NULL_HANDLE;
+    VkBuffer                   cubeIndexBuffer        = VK_NULL_HANDLE;
+    VkDeviceMemory             cubeIndexBufferMemory  = VK_NULL_HANDLE;
+
+    // --- Pickups + resources ---
+    std::vector<PickupItem>    pickups;
+    int                        metalCount = 0;
+
     // --- Texture ---
     std::string    texturePath;
     VkImage        textureImage       = VK_NULL_HANDLE;
@@ -195,6 +209,11 @@ private:
     void createCommandBuffers();
     void createSyncObjects();
     void spawnAsteroids();
+    void spawnVoxelAsteroids();
+    void updateVoxelAsteroids(float dt);
+    void checkVoxelCollisions();
+    void updatePickups(float dt);
+    void createCubeBuffers();
     void updateAsteroids(float dt);
     void createCrosshairPipeline();
     void createHudPipeline();

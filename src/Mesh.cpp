@@ -199,3 +199,33 @@ Mesh Mesh::makeCone(int sectors) {
 
     return mesh;
 }
+
+Mesh Mesh::makeCube() {
+    // Unit cube centered at origin. Each face has 4 vertices with a per-face normal
+    // so that flat shading is correct. CCW winding viewed from outside (back-face cull).
+    Mesh mesh;
+
+    struct FaceDef { glm::vec3 n; glm::vec3 v[4]; };
+    const FaceDef faces[6] = {
+        { { 1, 0, 0}, {{ 0.5f,-0.5f,-0.5f},{ 0.5f, 0.5f,-0.5f},{ 0.5f, 0.5f, 0.5f},{ 0.5f,-0.5f, 0.5f}} },
+        { {-1, 0, 0}, {{-0.5f,-0.5f, 0.5f},{-0.5f, 0.5f, 0.5f},{-0.5f, 0.5f,-0.5f},{-0.5f,-0.5f,-0.5f}} },
+        { { 0, 1, 0}, {{ 0.5f, 0.5f,-0.5f},{-0.5f, 0.5f,-0.5f},{-0.5f, 0.5f, 0.5f},{ 0.5f, 0.5f, 0.5f}} },
+        { { 0,-1, 0}, {{-0.5f,-0.5f,-0.5f},{ 0.5f,-0.5f,-0.5f},{ 0.5f,-0.5f, 0.5f},{-0.5f,-0.5f, 0.5f}} },
+        { { 0, 0, 1}, {{-0.5f,-0.5f, 0.5f},{ 0.5f,-0.5f, 0.5f},{ 0.5f, 0.5f, 0.5f},{-0.5f, 0.5f, 0.5f}} },
+        { { 0, 0,-1}, {{ 0.5f,-0.5f,-0.5f},{-0.5f,-0.5f,-0.5f},{-0.5f, 0.5f,-0.5f},{ 0.5f, 0.5f,-0.5f}} }
+    };
+
+    for (const auto& f : faces) {
+        auto base = static_cast<uint32_t>(mesh.vertices.size());
+        for (int i = 0; i < 4; ++i) {
+            Vertex v{};
+            v.pos      = f.v[i];
+            v.normal   = f.n;
+            v.texCoord = {};
+            mesh.vertices.push_back(v);
+        }
+        mesh.indices.insert(mesh.indices.end(),
+            { base, base+1, base+2, base, base+2, base+3 });
+    }
+    return mesh;
+}
