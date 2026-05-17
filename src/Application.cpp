@@ -1491,7 +1491,13 @@ void VulkanApplication::updateVoxelAsteroids(float dt) {
     for (auto& va : voxelAsteroids) {
         if (!va.alive) continue;
         va.position += va.velocity * dt;
-        if (va.voxelsRemaining <= 0) va.alive = false;
+        if (va.voxelsRemaining <= 0) {
+            va.alive = false;
+            bvhDirty = true;
+        } else {
+            va.voxelBVH.rebuild(va);  // world-space AABBs must stay current as asteroid moves
+            bvhDirty = true;          // outer BVH entry also depends on position
+        }
     }
 }
 
@@ -1499,14 +1505,18 @@ void VulkanApplication::checkVoxelCollisions() {
     for (auto& bullet : bullets) {
         if (!bullet.alive) continue;
         for (auto& va : voxelAsteroids) {
-            if (!va.alive) continue;
+            if (!va.alive || va.voxelBVH.empty()) continue;
+            // Outer AABB gate
             AABB b = va.bounds();
             if (bullet.position.x < b.min.x || bullet.position.x > b.max.x ||
                 bullet.position.y < b.min.y || bullet.position.y > b.max.y ||
                 bullet.position.z < b.min.z || bullet.position.z > b.max.z)
                 continue;
+            // Inner VoxelBVH point query — finds the exact voxel the bullet is inside
+            int key = va.voxelBVH.queryPoint(bullet.position);
+            if (key < 0) continue;
             int gx, gy, gz;
-            if (!va.worldToGrid(bullet.position, gx, gy, gz)) continue;
+            VoxelAsteroid::unpackKey(key, gx, gy, gz);
             VoxelType& vt = va.grid[gx][gy][gz];
             if (vt == VoxelType::Empty) continue;
             if (vt == VoxelType::Silver) {
@@ -1520,6 +1530,7 @@ void VulkanApplication::checkVoxelCollisions() {
             vt = VoxelType::Empty;
             --va.voxelsRemaining;
             bullet.alive = false;
+            va.voxelBVH.rebuild(va);  // keep inner BVH in sync after voxel removal
             break;
         }
     }
@@ -1576,8 +1587,18 @@ glm::mat4 VulkanApplication::playerModelMatrix() const {
 // Returns the nearest hit point, or a 500-unit fallback if nothing is in the crosshair.
 glm::vec3 VulkanApplication::findCrosshairTarget() const {
     constexpr float kFar = 1000.0f;
-    float t = kFar;
-    asteroidBVH.raycast(cameraPosition, aimDirection, kFar, t);
+    BVHHit hit = asteroidBVH.raycast(cameraPosition, aimDirection, kFar);
+    float t = hit.t;
+
+    if (hit.index >= 0 && hit.isVoxel) {
+        // Outer BVH only gives us the asteroid's bounding box entry.
+        // Descend into the inner VoxelBVH to land on the actual voxel face.
+        float voxelT = kFar;
+        t = (voxelAsteroids[hit.index].voxelBVH.raycast(
+                cameraPosition, aimDirection, kFar, voxelT) >= 0)
+            ? voxelT : kFar;
+    }
+
     return cameraPosition + aimDirection * t;
 }
 
@@ -1994,7 +2015,7 @@ void VulkanApplication::recordCommandBuffer(uint32_t imageIndex) {
     // --- Metal pickups (gold spheres) ---
     if (!pickups.empty()) {
         PushConstants pickupPC{};
-        pickupPC.baseColor = glm::vec4(1.0f, 0.78f, 0.08f, 1.0f);
+        pickupPC.baseColor = glm::vec4(0.15f, 1.0f, 0.45f, 1.0f);
         vkCmdBindVertexBuffers(cb, 0, 1, &asteroidVertexBuffer, &zero);
         vkCmdBindIndexBuffer(cb, asteroidIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
         for (const auto& p : pickups) {
@@ -2021,10 +2042,13 @@ void VulkanApplication::recordCommandBuffer(uint32_t imageIndex) {
             BvhBoxPC pc;
             pc.bmin  = glm::vec4(node.aabb.min, 0.0f);
             pc.bmax  = glm::vec4(node.aabb.max, 0.0f);
-            // Cyan for leaves (individual asteroids), dim gray for inner nodes
-            pc.color = (node.left == -1)
-                       ? glm::vec4(0.0f, 0.85f, 1.0f, 1.0f)
-                       : glm::vec4(0.35f, 0.35f, 0.35f, 1.0f);
+            // Cyan  = regular-asteroid leaf, orange = voxel-asteroid leaf, gray = inner node
+            if (node.left != -1)
+                pc.color = glm::vec4(0.35f, 0.35f, 0.35f, 1.0f);
+            else if (node.isVoxel)
+                pc.color = glm::vec4(1.00f, 0.55f, 0.10f, 1.0f);
+            else
+                pc.color = glm::vec4(0.00f, 0.85f, 1.00f, 1.0f);
             vkCmdPushConstants(cb, bvhWireframePipelineLayout, kBvhStages,
                                0, sizeof(BvhBoxPC), &pc);
             vkCmdDraw(cb, 24, 1, 0, 0);
@@ -2181,7 +2205,7 @@ void VulkanApplication::mainLoop() {
         glfwPollEvents();
 
         if (bvhDirty) {
-            asteroidBVH.build(asteroids);
+            asteroidBVH.build(asteroids, voxelAsteroids);
             bvhDirty = false;
         }
 

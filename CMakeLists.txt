@@ -71,6 +71,7 @@ add_executable(${PROJECT_NAME}
     src/main.cpp
     src/Application.cpp
     src/BVH.cpp
+    src/VoxelBVH.cpp
     src/Camera.cpp
     src/Mesh.cpp
     src/LaunchSettings.cpp
