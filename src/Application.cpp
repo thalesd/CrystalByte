@@ -2226,8 +2226,20 @@ void VulkanApplication::mainLoop() {
         if (pendingShoot) {
             if (playerEnergy >= kShotCost) {
                 playerEnergy -= kShotCost;
+
+                // Compute the ship's right vector (same basis as playerModelMatrix).
+                glm::vec3 up_ref = (std::abs(glm::dot(aimDirection, glm::vec3(0,1,0))) < 0.99f)
+                                   ? glm::vec3(0,1,0) : glm::vec3(1,0,0);
+                glm::vec3 right = glm::normalize(glm::cross(aimDirection, up_ref));
+
+                // Wing gun positions: 1 unit to each side, 0.5 units forward.
+                constexpr float kGunSide = 1.0f;
+                constexpr float kGunFwd  = 0.5f;
+                float side = leftGunNext ? -1.0f : 1.0f;
+                leftGunNext = !leftGunNext;
+
                 Bullet b;
-                b.position  = playerPosition + aimDirection * 2.0f;
+                b.position  = playerPosition + right * (side * kGunSide) + aimDirection * kGunFwd;
                 b.direction = glm::normalize(findCrosshairTarget() - b.position);
                 bullets.push_back(b);
             }

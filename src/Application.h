@@ -157,6 +157,9 @@ private:
     // --- Thruster ---
     float thrusterMultiplier = 1.0f; // 1x–5x; ramps while Shift held
 
+    // --- Guns ---
+    bool leftGunNext = true; // alternates which wing fires each shot
+
     // --- Mouse state ---
     bool   firstMouseSample = true;
     double prevMouseX       = 0.0;
