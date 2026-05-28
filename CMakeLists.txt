@@ -50,6 +50,8 @@ set(GLSL_SHADERS
     "${CMAKE_SOURCE_DIR}/shaders/hud.frag"
     "${CMAKE_SOURCE_DIR}/shaders/bvh_box.vert"
     "${CMAKE_SOURCE_DIR}/shaders/bvh_box.frag"
+    "${CMAKE_SOURCE_DIR}/shaders/cube.vert"
+    "${CMAKE_SOURCE_DIR}/shaders/cube.frag"
 )
 
 foreach(GLSL ${GLSL_SHADERS})
@@ -76,6 +78,10 @@ add_executable(${PROJECT_NAME}
     src/Mesh.cpp
     src/LaunchSettings.cpp
     src/stb_impl.cpp
+    src/RubiksCube.cpp
+    src/RubiksCubeApp.cpp
+    src/MainMenu.cpp
+    src/UpgradeStore.cpp
 )
 
 add_dependencies(${PROJECT_NAME} Shaders)
