@@ -2,7 +2,6 @@
 #include "Mesh.h"
 #include "UpgradeStore.h"
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/transform.hpp>
 #include "Types.h"
 #include <fstream>
 #include <stdexcept>
