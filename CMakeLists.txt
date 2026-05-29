@@ -32,8 +32,6 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 find_package(Vulkan REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
-find_package(tinyobjloader CONFIG REQUIRED)
-find_package(Stb REQUIRED)
 
 # Compile GLSL shaders to SPIR-V at build time
 set(SHADER_DIR "${CMAKE_BINARY_DIR}/shaders")
@@ -94,7 +92,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${VULKAN_INCLUDE_DIRS}
-    ${Stb_INCLUDE_DIR}
 )
 
 # Link libraries
@@ -102,7 +99,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Vulkan::Vulkan
     glfw
     glm::glm
-    tinyobjloader::tinyobjloader
 )
 
 # Enable debug symbols
