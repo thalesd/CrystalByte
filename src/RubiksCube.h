@@ -14,6 +14,7 @@ struct RubiksCube {
 
     void reset();
     void scramble(int numMoves = 25);
+    void scrambleWithRandomColors(int numMoves = 25);
 
     void moveU(bool cw = true);
     void moveD(bool cw = true);

@@ -71,13 +71,7 @@ add_custom_target(Shaders ALL DEPENDS ${SPV_SHADERS})
 # Create executable
 add_executable(${PROJECT_NAME}
     src/main.cpp
-    src/Application.cpp
-    src/BVH.cpp
-    src/VoxelBVH.cpp
-    src/Camera.cpp
     src/Mesh.cpp
-    src/LaunchSettings.cpp
-    src/stb_impl.cpp
     src/RubiksCube.cpp
     src/RubiksCubeApp.cpp
     src/MainMenu.cpp

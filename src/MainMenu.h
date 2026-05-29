@@ -1,9 +1,10 @@
 #pragma once
 
 struct MainMenuResult {
-    enum Choice { RUBIKS, SHOOTER, QUIT } choice = QUIT;
-    int width = 1280, height = 720, targetFPS = 0;
-    bool accepted = false;
+    int  width     = 1280;
+    int  height    = 720;
+    int  targetFPS = 0;
+    bool accepted  = false;
 };
 
 MainMenuResult showMainMenu();

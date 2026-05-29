@@ -271,6 +271,27 @@ void RubiksCube::scramble(int numMoves) {
 }
 
 // ---------------------------------------------------------------------------
+// scrambleWithRandomColors
+// ---------------------------------------------------------------------------
+
+void RubiksCube::scrambleWithRandomColors(int numMoves) {
+    std::mt19937 rng(std::random_device{}());
+
+    std::array<RColor, 6> palette = {
+        RColor::WHITE, RColor::YELLOW, RColor::RED,
+        RColor::ORANGE, RColor::BLUE,  RColor::GREEN
+    };
+    std::shuffle(palette.begin(), palette.end(), rng);
+
+    for (int f = 0; f < 6; ++f)
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c)
+                faces[f][r][c] = palette[f];
+
+    scramble(numMoves);
+}
+
+// ---------------------------------------------------------------------------
 // applyMoveToCube
 // ---------------------------------------------------------------------------
 

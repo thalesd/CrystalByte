@@ -158,6 +158,7 @@ private:
 
     glm::vec4 stickerColor(int gx, int gy, int gz, int meshFace) const;
     glm::mat4 cubieMatrix(int gx, int gy, int gz) const;
+    int       computeWeightedScore() const;
     void      queueMove(CubeMove m);
     void      commitScore();
 

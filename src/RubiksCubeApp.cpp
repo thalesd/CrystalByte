@@ -27,8 +27,7 @@ static const std::vector<const char*> kDeviceExts = {
 
 void RubiksCubeApp::run(const MainMenuResult& cfg) {
     config = cfg;
-    cube.reset();
-    cube.scramble();
+    cube.scrambleWithRandomColors();
     initWindow();
     initVulkan();
     mainLoop();
@@ -1198,7 +1197,7 @@ void RubiksCubeApp::recordCommandBuffer(uint32_t imageIndex) {
     constexpr VkShaderStageFlags kHudStages =
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    int score = cube.computeScore();
+    int score = computeWeightedScore();
     float fill = static_cast<float>(score) / 72.0f;
 
     // Score bar background (dark gray)
@@ -1296,6 +1295,7 @@ void RubiksCubeApp::mainLoop() {
         glfwPollEvents();
 
         // Process animation
+        animDuration = upgrades.fastMoves ? 0.09f : 0.18f;
         if (animating) {
             animTimer += deltaTime;
             if (animTimer >= animDuration) {
@@ -1330,25 +1330,42 @@ void RubiksCubeApp::mainLoop() {
 // commitScore
 // ---------------------------------------------------------------------------
 
+int RubiksCubeApp::computeWeightedScore() const {
+    int score = 0;
+    for (int f = 0; f < 6; ++f) {
+        for (int r = 0; r < 3; ++r) {
+            for (int c = 0; c < 3; ++c) {
+                int mult = upgrades.colorBonus[static_cast<int>(cube.faces[f][r][c])] ? 2 : 1;
+                if (c < 2 && cube.faces[f][r][c] == cube.faces[f][r][c+1])
+                    score += mult;
+                if (r < 2 && cube.faces[f][r][c] == cube.faces[f][r+1][c])
+                    score += mult;
+            }
+        }
+    }
+    return score;
+}
+
 void RubiksCubeApp::commitScore() {
-    int score = cube.computeScore();
+    int score = computeWeightedScore();
     float mult = 1.0f + 0.5f * static_cast<float>(upgrades.multiplierLevel);
     int finalScore = static_cast<int>(static_cast<float>(score) * mult);
     upgrades.totalScore += finalScore;
     commitFlash = 1.0f;
 
-    // Pause game, show upgrade store
+    // Pause game, generate 3 upgrade options, show store
     vkDeviceWaitIdle(device);
-    StoreAction action = showUpgradeStore(upgrades, finalScore);
-    if (action == StoreAction::NEW_GAME) {
-        cube.reset();
-        cube.scramble();
-        moveHistory.clear();
-        moveQueue.clear();
-        animating = false;
-    } else if (action == StoreAction::QUIT) {
+    auto options = generateUpgradeOptions(upgrades);
+    StoreAction action = showUpgradeStore(upgrades, finalScore, options);
+
+    // Always rescramble with randomised colors after a commit
+    cube.scrambleWithRandomColors();
+    moveHistory.clear();
+    moveQueue.clear();
+    animating = false;
+
+    if (action == StoreAction::QUIT)
         shouldQuit = true;
-    }
 }
 
 // ---------------------------------------------------------------------------

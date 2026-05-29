@@ -8,8 +8,8 @@
 #include <string>
 
 static const std::array<std::pair<int,int>, 5> kMenuResolutions = {{
-    { 800,  600  },
-    { 1280, 720  },
+    {  800,  600 },
+    { 1280,  720 },
     { 1920, 1080 },
     { 2560, 1440 },
     { 3840, 2160 },
@@ -17,7 +17,7 @@ static const std::array<std::pair<int,int>, 5> kMenuResolutions = {{
 
 static const std::array<int, 6> kMenuFramerates = { 30, 60, 120, 144, 240, 0 };
 
-static const char* menuFramerateStr(int fps) {
+static const char* menuFpsStr(int fps) {
     switch (fps) {
         case 30:  return "30 FPS";
         case 60:  return "60 FPS";
@@ -28,12 +28,7 @@ static const char* menuFramerateStr(int fps) {
     }
 }
 
-enum {
-    ID_MENU_COMBO_RES = 100,
-    ID_MENU_COMBO_FPS = 101,
-    ID_BTN_RUBIKS     = 200,
-    ID_BTN_SHOOTER    = 201,
-};
+enum { ID_MM_RES = 100, ID_MM_FPS = 101 };
 
 struct MainMenuState {
     MainMenuResult* result;
@@ -42,7 +37,7 @@ struct MainMenuState {
 };
 
 static LRESULT CALLBACK MainMenuWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    MainMenuState* state = reinterpret_cast<MainMenuState*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+    auto* state = reinterpret_cast<MainMenuState*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
 
     switch (msg) {
         case WM_CREATE: {
@@ -52,7 +47,7 @@ static LRESULT CALLBACK MainMenuWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         }
         case WM_COMMAND: {
             int id = LOWORD(wParam);
-            if ((id == ID_BTN_RUBIKS || id == ID_BTN_SHOOTER || id == IDCANCEL) && state) {
+            if ((id == IDOK || id == IDCANCEL) && state) {
                 int ri = (int)SendMessage(state->comboRes, CB_GETCURSEL, 0, 0);
                 int fi = (int)SendMessage(state->comboFps, CB_GETCURSEL, 0, 0);
                 if (ri >= 0 && ri < (int)kMenuResolutions.size()) {
@@ -61,18 +56,7 @@ static LRESULT CALLBACK MainMenuWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
                 }
                 if (fi >= 0 && fi < (int)kMenuFramerates.size())
                     state->result->targetFPS = kMenuFramerates[fi];
-
-                if (id == ID_BTN_RUBIKS) {
-                    state->result->choice   = MainMenuResult::RUBIKS;
-                    state->result->accepted = true;
-                } else if (id == ID_BTN_SHOOTER) {
-                    state->result->choice   = MainMenuResult::SHOOTER;
-                    state->result->accepted = true;
-                } else {
-                    // IDCANCEL / Quit
-                    state->result->choice   = MainMenuResult::QUIT;
-                    state->result->accepted = false;
-                }
+                state->result->accepted = (id == IDOK);
                 DestroyWindow(hwnd);
             }
             return 0;
@@ -101,65 +85,50 @@ MainMenuResult showMainMenu() {
     wc.hIcon         = LoadIconA(nullptr, IDI_APPLICATION);
     RegisterClassExA(&wc);
 
-    const int cW = 310, cH = 200;
+    const int cW = 310, cH = 165;
     RECT rc = { 0, 0, cW, cH };
     AdjustWindowRectEx(&rc, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME);
     int wW = rc.right  - rc.left;
     int wH = rc.bottom - rc.top;
-
     int wx = (GetSystemMetrics(SM_CXSCREEN) - wW) / 2;
     int wy = (GetSystemMetrics(SM_CYSCREEN) - wH) / 2;
 
     HWND hwnd = CreateWindowExA(
-        WS_EX_DLGMODALFRAME,
-        "CrystalByteMainMenu",
-        "CrystalByte \xe2\x80\x94 Main Menu",
+        WS_EX_DLGMODALFRAME, "CrystalByteMainMenu",
+        "CrystalByte \xe2\x80\x94 Rubik's Cube",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
-        wx, wy, wW, wH,
-        nullptr, nullptr, hInst, &state
-    );
+        wx, wy, wW, wH, nullptr, nullptr, hInst, &state);
 
     if (!hwnd) { UnregisterClassA("CrystalByteMainMenu", hInst); return result; }
 
     HINSTANCE h = hInst;
 
-    // Resolution row at y=20
-    CreateWindowExA(0, "STATIC", "Resolution:",
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
+    CreateWindowExA(0, "STATIC", "Resolution:", WS_CHILD | WS_VISIBLE | SS_LEFT,
         20, 23, 90, 20, hwnd, nullptr, h, nullptr);
     state.comboRes = CreateWindowExA(0, "COMBOBOX", nullptr,
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
-        120, 20, 170, 150, hwnd, (HMENU)(INT_PTR)ID_MENU_COMBO_RES, h, nullptr);
+        120, 20, 170, 150, hwnd, (HMENU)(INT_PTR)ID_MM_RES, h, nullptr);
     for (auto& [w, ht] : kMenuResolutions) {
         std::string lbl = std::to_string(w) + " x " + std::to_string(ht);
         SendMessageA(state.comboRes, CB_ADDSTRING, 0, (LPARAM)lbl.c_str());
     }
-    SendMessageA(state.comboRes, CB_SETCURSEL, 1, 0); // default: 1280x720
+    SendMessageA(state.comboRes, CB_SETCURSEL, 1, 0);
 
-    // Frame Rate row at y=60
-    CreateWindowExA(0, "STATIC", "Frame Rate:",
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
+    CreateWindowExA(0, "STATIC", "Frame Rate:", WS_CHILD | WS_VISIBLE | SS_LEFT,
         20, 63, 90, 20, hwnd, nullptr, h, nullptr);
     state.comboFps = CreateWindowExA(0, "COMBOBOX", nullptr,
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
-        120, 60, 170, 170, hwnd, (HMENU)(INT_PTR)ID_MENU_COMBO_FPS, h, nullptr);
+        120, 60, 170, 170, hwnd, (HMENU)(INT_PTR)ID_MM_FPS, h, nullptr);
     for (int fps : kMenuFramerates)
-        SendMessageA(state.comboFps, CB_ADDSTRING, 0, (LPARAM)menuFramerateStr(fps));
-    SendMessageA(state.comboFps, CB_SETCURSEL, 1, 0); // default: 60 FPS
+        SendMessageA(state.comboFps, CB_ADDSTRING, 0, (LPARAM)menuFpsStr(fps));
+    SendMessageA(state.comboFps, CB_SETCURSEL, 1, 0);
 
-    // Three buttons at y=150
-    // "Rubik's Cube" x=10 w=90
-    CreateWindowExA(0, "BUTTON", "Rubik's Cube",
+    CreateWindowExA(0, "BUTTON", "Play",
         WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | WS_TABSTOP,
-        10, 150, 90, 30, hwnd, (HMENU)(INT_PTR)ID_BTN_RUBIKS, h, nullptr);
-    // "Space Shooter" x=110 w=100
-    CreateWindowExA(0, "BUTTON", "Space Shooter",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
-        110, 150, 100, 30, hwnd, (HMENU)(INT_PTR)ID_BTN_SHOOTER, h, nullptr);
-    // "Quit" x=220 w=70
+        60, 118, 90, 30, hwnd, (HMENU)IDOK, h, nullptr);
     CreateWindowExA(0, "BUTTON", "Quit",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
-        220, 150, 70, 30, hwnd, (HMENU)(INT_PTR)IDCANCEL, h, nullptr);
+        165, 118, 70, 30, hwnd, (HMENU)IDCANCEL, h, nullptr);
 
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
